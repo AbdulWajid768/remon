@@ -15,6 +15,7 @@ struct FloatingMonitor: View {
             }
             ThroughputChart(points: Array(store.throughput.suffix(90)), window: 90, showsAxes: false, interactive: false)
                 .frame(height: 46)
+            SystemStrip()
             if let top = store.apps.first(where: { $0.totalRate > 0 }) {
                 HStack(spacing: 6) {
                     AppIcon(identity: top.identity, size: 14)

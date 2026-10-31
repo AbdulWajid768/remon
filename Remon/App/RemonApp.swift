@@ -6,6 +6,7 @@ struct RemonApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var store = MonitorStore.shared
     @State private var preferences = Preferences.shared
+    @State private var system = SystemMonitor.shared
 
     var body: some Scene {
         @Bindable var preferences = preferences
@@ -14,6 +15,7 @@ struct RemonApp: App {
             MainView()
                 .environment(store)
                 .environment(preferences)
+                .environment(system)
                 .modifier(WindowActionInstaller(store: store))
                 .frame(minWidth: 900, minHeight: 560)
         }
@@ -24,10 +26,12 @@ struct RemonApp: App {
             MenuBarPanel()
                 .environment(store)
                 .environment(preferences)
+                .environment(system)
         } label: {
             MenuBarLabel()
                 .environment(store)
                 .environment(preferences)
+                .environment(system)
                 .modifier(WindowActionInstaller(store: store))
         }
         .menuBarExtraStyle(.window)
@@ -36,6 +40,7 @@ struct RemonApp: App {
             FloatingMonitor()
                 .environment(store)
                 .environment(preferences)
+                .environment(system)
                 .onAppear { store.isHUDVisible = true }
                 .onDisappear { store.isHUDVisible = false }
         }
@@ -52,6 +57,7 @@ struct RemonApp: App {
             MenuBarPanel()
                 .environment(store)
                 .environment(preferences)
+                .environment(system)
         }
         .windowResizability(.contentSize)
         .defaultLaunchBehavior(.suppressed)
@@ -60,6 +66,7 @@ struct RemonApp: App {
             SettingsView()
                 .environment(store)
                 .environment(preferences)
+                .environment(system)
         }
     }
 }
@@ -70,6 +77,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             Preferences.shared.applyAppearance()
             Preferences.shared.applyActivationPolicy()
             MonitorStore.shared.start()
+            SystemMonitor.shared.onSample = { snapshot in
+                if let temperature = snapshot.temperature(.cpu) { MonitorStore.shared.alerts.evaluateTemperature(temperature) }
+            }
+            SystemMonitor.shared.start()
         }
         UNUserNotificationCenter.current().delegate = self
         MainActor.assumeIsolated {
@@ -102,6 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func flushHistorySynchronously() {
         let (history, pending) = MainActor.assumeIsolated {
             MonitorStore.shared.stop()
+            SystemMonitor.shared.stop()
             return (MonitorStore.shared.history, MonitorStore.shared.takePendingHistory(includeOpenConnections: true))
         }
         guard let history else { return }
@@ -164,8 +176,12 @@ struct RemonCommands: Commands {
         }
         CommandGroup(before: .sidebar) {
             ForEach(SidebarSection.allCases) { section in
-                Button(section.rawValue) { store.section = section }
-                    .keyboardShortcut(KeyEquivalent(section.shortcut))
+                if let key = section.shortcut {
+                    Button(section.rawValue) { store.section = section }
+                        .keyboardShortcut(KeyEquivalent(key))
+                } else {
+                    Button(section.rawValue) { store.section = section }
+                }
             }
             Divider()
             Button(store.showInspector ? "Hide Inspector" : "Show Inspector") {

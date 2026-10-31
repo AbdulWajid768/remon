@@ -4,6 +4,7 @@ import Observation
 
 enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
     case overview = "Overview"
+    case system = "System"
     case apps = "Apps"
     case connections = "Connections"
     case map = "Map"
@@ -18,6 +19,7 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
     var symbol: String {
         switch self {
         case .overview: "gauge.with.dots.needle.33percent"
+        case .system: "cpu"
         case .apps: "square.grid.2x2"
         case .connections: "point.3.filled.connected.trianglepath.dotted"
         case .map: "map"
@@ -29,21 +31,22 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    var shortcut: Character {
+    var shortcut: Character? {
         switch self {
         case .overview: "1"
-        case .apps: "2"
-        case .connections: "3"
-        case .map: "4"
-        case .history: "5"
-        case .log: "6"
-        case .speedTest: "7"
-        case .alerts: "8"
-        case .rules: "9"
+        case .system: "2"
+        case .apps: "3"
+        case .connections: "4"
+        case .map: "5"
+        case .history: "6"
+        case .log: "7"
+        case .speedTest: "8"
+        case .alerts: "9"
+        case .rules: nil
         }
     }
 
-    static let monitorSections: [SidebarSection] = [.overview, .apps, .connections, .map, .history, .log]
+    static let monitorSections: [SidebarSection] = [.overview, .system, .apps, .connections, .map, .history, .log]
     static let toolSections: [SidebarSection] = [.speedTest, .alerts, .rules]
 }
 

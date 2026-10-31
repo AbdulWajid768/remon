@@ -1,6 +1,6 @@
 # Remon
 
-A native macOS network monitor written in Swift and SwiftUI. It shows live per-app bandwidth, every open connection with its hostname, country and network owner, a world map of destinations, per-minute usage history, a searchable connection log, speed tests, data-plan tracking, alerts, and a live graph in the menu bar. It needs no system extension, root helper or third-party package.
+A native macOS network monitor written in Swift and SwiftUI. It shows live per-app bandwidth, every open connection with its hostname, country and network owner, a world map of destinations, per-minute usage history, a searchable connection log, speed tests, data-plan tracking, alerts, and a live graph in the menu bar. It also has an iStat-style **System** view (CPU per core, GPU, memory, temperatures, fans, power, battery and disk) and **real blocking** of domains and servers. It needs no system extension, kernel extension or third-party package. Blocking asks for your administrator password through the standard macOS prompt.
 
 ![Overview](docs/screenshots/overview.png)
 
@@ -9,6 +9,8 @@ A native macOS network monitor written in Swift and SwiftUI. It shows live per-a
 | ![Connections](docs/screenshots/connections.png) | ![Apps](docs/screenshots/apps.png) |
 | ![History](docs/screenshots/history.png) | ![Quick Open](docs/screenshots/quick-open.png) |
 | ![Menu bar panel](docs/screenshots/menu-bar-panel.png) | ![Settings](docs/screenshots/settings.png) |
+| ![System](docs/screenshots/system.png) | ![Map (globe)](docs/screenshots/map.png) |
+| ![Rules / blocking](docs/screenshots/rules.png) | |
 
 All screenshots were captured from the running app on this Mac with real traffic. Nothing in them is mock data.
 
@@ -32,7 +34,7 @@ open build/DerivedData/Build/Products/Release/Remon.app
 ```
 
 ```bash
-xcodebuild -project Remon.xcodeproj -scheme Remon -derivedDataPath build/DerivedData test   # 26 tests (Swift Testing)
+xcodebuild -project Remon.xcodeproj -scheme Remon -derivedDataPath build/DerivedData test   # 33 tests (Swift Testing)
 ```
 
 The app is ad-hoc signed ("Sign to Run Locally") with Hardened Runtime, and the **App Sandbox is off** (see the limitations section for why). If `xcodebuild` fails with "failed to load a required plug-in", run `xcodebuild -runFirstLaunch` once. That was needed on this machine.
@@ -41,7 +43,7 @@ The app is ad-hoc signed ("Sign to Run Locally") with Hardened Runtime, and the 
 
 | Argument | Effect |
 |---|---|
-| `-initialSection connections` | Open on a section: overview, apps, connections, map, history, log, speed test, alerts or rules |
+| `-initialSection connections` | Open on a section: overview, system, apps, connections, map, history, log, speed test, alerts or rules |
 | `-skipOnboarding YES` | Don't show the welcome sheet |
 | `-selectTop YES` | Auto-select the top app/connection so the inspector is populated |
 | `-quickOpen YES` / `-openSettings YES` / `-previewMenuPanel YES` | Open Quick Open, Settings, or the menu bar panel in a window |
@@ -121,6 +123,34 @@ The app is ad-hoc signed ("Sign to Run Locally") with Hardened Runtime, and the 
 - **Global shortcut ⌃⌥⌘R:** brings Remon up from anywhere. It uses the Carbon hotkey API, so no Accessibility permission is needed.
 - **Color themes:** Classic, Ocean, Sunset, Forest and Graphite, applied live to every chart, the menu bar graph and the gauges.
 
+### v1.2: system metrics, real blocking, map fixes
+
+**System section (⌘2)**, sampled every 2 s off the main thread:
+- **CPU:** total load (user/system), a per-core bar chart labelled E/P (efficiency/performance), and load averages.
+- **GPU:** utilisation and memory in use, from the `IOAccelerator` `PerformanceStatistics` registry entry.
+- **Memory:** an Activity Monitor–style breakdown (app, wired, compressed, cached, free), swap, and memory pressure.
+- **Temperatures:** about 70 die, battery and NAND sensors through `IOHIDEventSystemClient`, grouped by CPU / GPU / battery / storage, with average and maximum for each group. GPU temperature comes from SMC `Tg*` keys.
+- **Fans** (RPM and range) and **system power draw** (watts) from read-only SMC keys.
+- **Battery:** charge, charging state, time remaining, health (% of design capacity), cycle count and temperature.
+- **Disk:** free space, plus live read/write throughput from `IOBlockStorageDriver` statistics.
+- **This Mac:** chip, macOS version, uptime and thermal state.
+
+The rest of the app picks these up too:
+- CPU/GPU/memory/temperature appear in the menu bar panel and the floating monitor, and optionally in the menu bar itself.
+- A new **"CPU temperature above"** alert rule.
+- A **Get System Status** Shortcuts action.
+
+**Blocking (Rules section),** applied system-wide:
+- **Domains** go into a managed block in `/etc/hosts` (`0.0.0.0` and `::`), followed by a DNS cache flush. A backup of the original file is kept at `/etc/hosts.remon-backup`. Unblocking everything restores the file byte for byte (unit-tested).
+- **Servers (IPs)** become `pf` rules in Remon's own `com.apple/remon` anchor. The stock `/etc/pf.conf` already evaluates `com.apple/*` anchors, so no system config file is edited. Existing connections to a newly blocked server are killed (`pfctl -k`).
+- **Quick Blocks** turn off **macOS Software Update** (`swscan`, `swcdn`, `swdist`, `mesu`, `updates.cdn-apple.com`, `gdmf`), **Google Chrome updates** or **Microsoft AutoUpdate** in one click.
+- Right-click any connection, or use its inspector, to **Block Server / Unblock Server**. Blocked connections show a red "Blocked" state. Apps also has "Block *App*'s Current Servers".
+- Changes are debounced, and applying them shows the standard macOS administrator prompt. The status card shows Blocking active / Pending / Not applied, and flags that server blocks need re-applying after a restart.
+
+**Map fixes:**
+- **Zoom-out snapping back:** the camera was `.automatic`, so MapKit re-framed every time the pins refreshed (every second), undoing your zoom. It now frames once (and once more when your own location arrives), and the pins refresh every 3 s.
+- **Zoom-out stopping early:** the flat map can't zoom out past about 137° of longitude in a tall window, because Mercator can't scroll past the poles (confirmed by logging MapKit's camera). The map now **defaults to a 3D globe** (satellite + labels) that zooms out to the whole planet. A Flat/Globe toggle and **Fit All** sit at the top-right.
+
 ### Premium polish (spec Part B)
 - **Menu bar:**
   - The status item draws a live mirrored mini-graph and stacked ↓/↑ rates. It's a template image, so it matches the menu bar; a colored mode is available.
@@ -133,7 +163,7 @@ The app is ad-hoc signed ("Sign to Run Locally") with Hardened Runtime, and the 
   - quoted values and `-negation`
   - live suggestions
 - **Quick Open (⌘K):** keyboard-driven, Spotlight-style.
-- **Keyboard shortcuts:** ⌘1–⌘9 sections, ⌘K Quick Open, ⇧⌘P pause, ⌥⌘I inspector, ⌥⌘M floating monitor, ⌘R speed test (in Speed Test), ⌘E / ⇧⌘E export, ⌘0 main window, ⌘, settings, and ⌃⌥⌘R global.
+- **Keyboard shortcuts:** ⌘1–⌘9 sections (⌘2 = System), ⌘K Quick Open, ⇧⌘P pause, ⌥⌘I inspector, ⌥⌘M floating monitor, ⌘R speed test (in Speed Test), ⌘E / ⇧⌘E export, ⌘0 main window, ⌘, settings, and ⌃⌥⌘R global.
 - **Onboarding:** three pages, including an honest privacy disclosure and toggles, notification permission, launch at login and menu bar options.
 - **Settings:** General, Monitoring, Privacy, Notifications and Advanced tabs. Covers launch at login (`SMAppService`), Dock icon, appearance override, menu bar style, bits/bytes, sample interval, helper grouping, loopback, retention, and clear/reveal data.
 - **Export:** CSV and JSON for connections and app usage; CSV for history.
@@ -146,7 +176,7 @@ The app is ad-hoc signed ("Sign to Run Locally") with Hardened Runtime, and the 
 
 | Capability | Status | Why |
 |---|---|---|
-| **Blocking / allow-deny rules** (Little Snitch / LuLu style) | The UI and persistence work. Enforcement is behind the `ConnectionPolicyEnforcer` protocol, and this build ships `UnavailableNetworkExtensionEnforcer`, which reports the reason. The Rules screen says plainly **"Rules are not enforced in this build"**. | Blocking needs an `NEFilterDataProvider` **system extension**. That requires a Developer ID certificate, the `com.apple.developer.networking.networkextension` entitlement granted by Apple, notarization, and the user approving it in System Settings. None of that can be set up unattended or with ad-hoc signing. |
+| **Per-app blocking** (block an app entirely, whatever it connects to, Little Snitch-style) | Not implemented. Remon blocks **domains and servers** for all apps instead (see v1.2). | App-level filtering needs an `NEFilterDataProvider` **system extension**. That requires a Developer ID certificate, the Network Extension entitlement from Apple, notarization and user approval, none of which an ad-hoc-signed build can have. `ConnectionPolicyEnforcer` is the seam for adding it. |
 | Per-app data caps / metered-network blocking (TripMode) | Not implemented | Needs the same Network Extension. |
 | Home-screen / Notification Center **widgets** | Not implemented | A WidgetKit extension needs an App Group shared with the app. App Group containers need a real Team ID (`group.<team>.…`), which an ad-hoc-signed build doesn't have. The App Intents above provide the same data to Shortcuts in the meantime. |
 | Traffic source | Behind the `TrafficSource` protocol (`NettopTrafficSource`) | A Network Extension source could replace `nettop` later without UI changes. |
@@ -169,6 +199,25 @@ The app is ad-hoc signed ("Sign to Run Locally") with Hardened Runtime, and the 
 - **Light mode and the appearance override:** [docs/screenshots/overview-light.png](docs/screenshots/overview-light.png) was captured with `-appearance Light` while the system was in dark mode.
 - Quitting (⌘Q or SIGTERM) flushes history and leaves no `nettop` behind. After a SIGKILL, the orphan is cleaned up on next launch (tested).
 
+**v1.2 (system metrics, blocking, map), verified on this Mac:**
+- **33 tests pass.** Release build: zero warnings.
+- **System view** shows real values on this M4 Pro:
+  - CPU per core, with load landing on the E-cores as expected. I checked the E/P order against the device tree: CPUs 0–3 are efficiency cores.
+  - GPU utilisation, and memory at 12.1 of 24 GB.
+  - CPU about 40 °C and GPU about 46 °C.
+  - Both fans reading "Off" at idle (range 2317–7826 rpm), and 5 W system power.
+  - Battery at 20%, 66 cycles.
+  - Remon uses **about 4–5% CPU** while the System view is open (Release, `top`).
+- **Blocking:**
+  - The generated rules pass `pfctl -n` (parse-only, unit-tested).
+  - The hosts-file script was **run for real** against a scratch hosts file in tests: block, replace, then unblock restores the original exactly.
+  - Domain and IP input is strictly validated, and injection attempts are rejected in tests.
+  - **Not verified: actually applying rules to this Mac.** That needs the administrator password at the macOS prompt, and this machine has no passwordless `sudo`. The first time you toggle a block, check the status card and test (e.g. `curl -I https://swscan.apple.com` should fail).
+- **Map:** confirmed by logging MapKit's camera:
+  - The automatic re-framing is gone.
+  - The flat map's zoom-out limit (about 137°) is a MapKit property, not a bug in Remon.
+  - The globe style renders a real 3D Earth (screenshot above).
+
 **v1.1 premium features, verified on this Mac:**
 - Debug build: zero compiler warnings. **26 tests pass.** The new tests cover billing-cycle maths (including year wrap and day clamping), anomaly thresholds, `networkQuality` JSON parsing, code-signature classification (an Apple system app and an unsigned file), and a connection-log SQLite round trip with search.
 - Running app:
@@ -182,7 +231,7 @@ The app is ad-hoc signed ("Sign to Run Locally") with Hardened Runtime, and the 
   - the Wi-Fi row
   - signature badges
 
-  The screenshots above predate v1.1. Regenerate them with `scripts/screenshot.sh map docs/screenshots/map.png 40` (and likewise for `log` and `speed test`).
+  The Map, System and Rules screenshots were added in v1.2, once the screen was unlocked. Log, Speed Test and the floating monitor still have none. Regenerate any of them with `scripts/screenshot.sh <section> <out.png> <wait>`.
 - **Not verified:**
   - Shortcuts actions appearing in the Shortcuts app.
   - The global hotkey.
@@ -212,6 +261,8 @@ The app is ad-hoc signed ("Sign to Run Locally") with Hardened Runtime, and the 
 - **Pause** freezes the Apps and Connections tables for inspection. Charts, totals and history keep recording.
 - **Changing** the sample interval, helper grouping or loopback setting restarts sampling and resets per-app session totals. Totals already written to history are kept.
 - **Up to one minute of history can be lost** if the app is force-killed (SIGKILL) or crashes. Normal quits flush.
+- **Domain blocks** use `/etc/hosts`, so they cover the exact names listed. Apps that use DNS-over-HTTPS or hard-coded IPs can bypass them. **Server blocks** use `pf` and are cleared by a restart (macOS loads only its own anchors at boot); the Rules screen flags this and re-applies with one click. To undo everything manually: `sudo pfctl -a com.apple/remon -F all` and restore `/etc/hosts.remon-backup`.
+- **Temperature sensors** are read through IOKit functions that exist but aren't in the public headers (`IOHIDEventSystemClient*`). They're resolved at runtime, and if a future macOS removes them the sensor list just comes back empty. SMC keys (fans, power, GPU temperature) differ between Mac models: on a Mac without fans the Fans card hides itself, and unknown GPU keys fall back to "—".
 - **Speed tests use real bandwidth:** typically tens to hundreds of MB per run, against Apple's servers. On metered connections, run them sparingly.
 - **Wi-Fi network name (SSID)** shows only if macOS has granted Remon Location access. Without it, CoreWLAN returns `nil` and the row says "Wi-Fi". Signal strength, channel and transmit rate don't need permission.
 - **Anomaly detection** needs at least three previous days of history for an app before it can fire.
@@ -234,22 +285,24 @@ Remon/
     HostnameResolver.swift  reverse DNS (actor, cached)
     GeoLocator.swift        GeoLocating protocol, ipwho.is + offline implementations, IPClassifier
     HistoryStore.swift      SQLite actor
-    PolicyEnforcer.swift    ConnectionPolicyEnforcer protocol + Network Extension stub + PolicyCenter
     Classification.swift    destination categories, port → service names
     CodeSignature.swift     static code-signature classification + cache
     SpeedTest.swift         networkQuality runner/parser
     NetworkEnvironment.swift public IP, VPN detection, Wi-Fi (CoreWLAN)
     Insights.swift          billing cycle and anomaly maths (pure, unit-tested)
     HotKey.swift            Carbon global hotkey
+    SystemMetrics.swift     CPU/GPU/memory/disk/battery sampler, HID temperature sensors, SMC reader
+    PolicyEnforcer.swift    block rules, hosts/pf script generator, privileged enforcer, PolicyCenter
     SearchQuery.swift       query language
     Formatting.swift        byte/rate formatting
   Store/
+    SystemMonitor.swift     observable system metrics + 5-minute history
     MonitorStore.swift      @MainActor @Observable central state: rates, aggregation, history buffering
     AlertCenter.swift       rules, evaluation, notifications
     Preferences.swift       UserDefaults-backed settings, launch at login
     ExportService.swift     CSV/JSON export
   Intents/RemonIntents.swift  App Intents + App Shortcuts
-  Views/                  SwiftUI: MainView, Overview, Apps, Connections, Map, History, ConnectionLog,
+  Views/                  SwiftUI: MainView, Overview, System, Apps, Connections, Map, History, ConnectionLog,
                           SpeedTest, Alerts, Rules, QuickOpen, FloatingMonitor, Onboarding, Settings,
                           MenuBar, Components
 RemonTests/               Swift Testing suite

@@ -82,7 +82,7 @@ struct QuickOpenView: View {
         func match(_ s: String) -> Bool { q.isEmpty || s.localizedStandardContains(q) }
         var items: [Item] = []
         for s in SidebarSection.allCases where match(s.rawValue) {
-            items.append(Item(id: "s:\(s.rawValue)", title: s.rawValue, subtitle: "Section · ⌘\(s.shortcut)", kind: .section(s)))
+            items.append(Item(id: "s:\(s.rawValue)", title: s.rawValue, subtitle: "Section" + (s.shortcut.map { " · ⌘\($0)" } ?? ""), kind: .section(s)))
         }
         for a in store.apps where match(a.name) {
             items.append(Item(id: "a:\(a.id)", title: a.name, subtitle: "App · \(a.connectionCount) connections", kind: .app(a)))

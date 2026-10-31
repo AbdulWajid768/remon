@@ -121,12 +121,14 @@ struct AppContextMenu: View {
                                                 sustainSeconds: 10, appID: app.id, appName: app.name))
             store.section = .alerts
         }
-        Button("Block \(app.name)…") {
-            if store.policy.rule(for: app.id) == nil {
-                store.policy.rules.append(PolicyRule(appID: app.id, appName: app.name))
-            }
+        let servers = Array(Set(store.connections(forApp: app.id)
+            .filter { !$0.isListening && IPClassifier.scope(of: $0.remote.bareAddress) == .publicInternet }
+            .map(\.remote.bareAddress))).sorted()
+        Button("Block \(app.name)'s Current Servers (\(servers.count))") {
+            store.policy.block(addresses: servers, note: app.name)
             store.section = .rules
         }
+        .disabled(servers.isEmpty)
         if let running = store.runningApplication(for: app) {
             Divider()
             Button("Quit \(app.name)") { running.terminate() }

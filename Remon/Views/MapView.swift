@@ -5,8 +5,13 @@ import SwiftUI
 struct MapView: View {
     @Environment(MonitorStore.self) private var store
     @Environment(Preferences.self) private var preferences
-    @State private var position: MapCameraPosition = .automatic
+    // Never `.automatic`: that re-frames whenever the content changes, which fought the user's zoom.
+    @State private var position: MapCameraPosition = .camera(MapCamera(centerCoordinate: .init(latitude: 25, longitude: 10), distance: 28_000_000))
     @State private var selection: String?
+    @State private var destinations: [Destination] = []
+    @State private var hasFramed = false
+    @State private var framedWithHome = false
+    @AppStorage("mapGlobe") private var globe = true
 
     struct Destination: Identifiable, Hashable {
         var id: String
@@ -25,10 +30,12 @@ struct MapView: View {
     }
 
     var body: some View {
-        let destinations = computeDestinations()
         let home = homeCoordinate
         HStack(spacing: 0) {
-            Map(position: $position, selection: $selection) {
+            // The default camera bounds stop zooming out at ~24,000 km (about 137° of longitude),
+            // which is what made zoom-out feel stuck; allow pulling back to the whole planet.
+            Map(position: $position, bounds: MapCameraBounds(minimumDistance: 800, maximumDistance: 90_000_000),
+                selection: $selection) {
                 if let home {
                     ForEach(destinations) { d in
                         MapPolyline(coordinates: [home, d.coordinate], contourStyle: .geodesic)
@@ -50,13 +57,33 @@ struct MapView: View {
                     .tag(d.id)
                 }
             }
-            .mapStyle(.standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll))
+            // The globe (3D satellite imagery) zooms out to the whole planet. The flat Mercator map can't scroll
+            // past the poles, so in a tall window it tops out at roughly 137° of longitude.
+            .mapStyle(globe ? .hybrid(elevation: .realistic, pointsOfInterest: .excludingAll)
+                            : .standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll))
             .mapControls {
                 MapZoomStepper()
                 MapCompass()
                 MapScaleView()
             }
             .overlay(alignment: .topLeading) { legend.padding(12) }
+            .overlay(alignment: .topTrailing) {
+                HStack(spacing: 8) {
+                    Picker("Style", selection: $globe) {
+                        Label("Flat", systemImage: "map").tag(false)
+                        Label("Globe", systemImage: "globe").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    Button { fitAll(animated: true) } label: { Label("Fit All", systemImage: "arrow.up.left.and.arrow.down.right") }
+                        .disabled(destinations.isEmpty)
+                }
+                .controlSize(.small)
+                .padding(8)
+                .background(.regularMaterial, in: .rect(cornerRadius: 10))
+                .padding(12)
+            }
             .overlay {
                 if destinations.isEmpty {
                     ContentUnavailableView("No Located Destinations", systemImage: "map",
@@ -73,12 +100,59 @@ struct MapView: View {
             sidePanel(destinations)
                 .frame(width: 280)
         }
+        .task {
+            // Let the map lay out first: a fit computed against a zero-sized map frames the wrong area.
+            try? await Task.sleep(for: .milliseconds(700))
+            // Refresh pins every few seconds rather than on every live tick.
+            while !Task.isCancelled {
+                refresh()
+                try? await Task.sleep(for: .seconds(3))
+            }
+        }
+        .onChange(of: store.searchText) { refresh() }
+        .onChange(of: globe) { fitAll(animated: true) }
+
         .onChange(of: selection) { _, id in
             guard let id, let d = destinations.first(where: { $0.id == id }) else { return }
             withAnimation(.smooth(duration: 0.8)) {
                 position = .camera(MapCamera(centerCoordinate: d.coordinate, distance: 4_000_000))
             }
         }
+    }
+
+    private func refresh() {
+        let next = computeDestinations()
+        if next != destinations { destinations = next }
+        // Frame once when data arrives, and once more when this Mac's own location becomes known;
+        // after that the camera is entirely the user's.
+        if (!hasFramed && !next.isEmpty) || (!framedWithHome && homeCoordinate != nil && !next.isEmpty) {
+            hasFramed = true
+            framedWithHome = homeCoordinate != nil
+            fitAll(animated: hasFramed)
+        }
+    }
+
+    private func fitAll(animated: Bool) {
+        var coordinates = destinations.map(\.coordinate)
+        if let home = homeCoordinate { coordinates.append(home) }
+        guard !coordinates.isEmpty else { return }
+        var rect = MKMapRect.null
+        for c in coordinates {
+            let p = MKMapPoint(c)
+            rect = rect.union(MKMapRect(x: p.x, y: p.y, width: 1, height: 1))
+        }
+        let pad = max(rect.width, rect.height) * 0.15 + 1_500_000
+        rect = rect.insetBy(dx: -pad, dy: -pad).intersection(.world)
+        let update: () -> Void
+        if globe {
+            // A globe can show at most a hemisphere: centre on the data and pull back far enough.
+            let center = MKMapPoint(x: rect.midX, y: rect.midY).coordinate
+            let distance = min(40_000_000, max(3_000_000, rect.width / MKMapPointsPerMeterAtLatitude(center.latitude) * 1.2))
+            update = { position = .camera(MapCamera(centerCoordinate: center, distance: distance)) }
+        } else {
+            update = { position = .rect(rect) }
+        }
+        if animated { withAnimation(.smooth(duration: 0.8), update) } else { update() }
     }
 
     private var homeCoordinate: CLLocationCoordinate2D? {

@@ -312,3 +312,102 @@ struct InsightsTests {
         #expect(await store.connectionLog(search: nil, since: now.addingTimeInterval(60)).isEmpty)
     }
 }
+
+@Suite("blocking")
+struct BlockingTests {
+    @Test func domainNormalization() {
+        #expect(FirewallScript.normalizedDomain("  SWSCAN.apple.com ") == "swscan.apple.com")
+        #expect(FirewallScript.normalizedDomain("https://updates.cdn-apple.com/path?x=1") == "updates.cdn-apple.com")
+        #expect(FirewallScript.normalizedDomain("*.example.org") == "example.org")
+        #expect(FirewallScript.normalizedDomain("localhost") == nil)
+        #expect(FirewallScript.normalizedDomain("bad domain.com") == nil)
+        #expect(FirewallScript.normalizedDomain("evil.com'; rm -rf /") == nil)
+        #expect(FirewallScript.normalizedDomain("-x.com") == nil)
+    }
+
+    @Test func addressNormalization() {
+        #expect(FirewallScript.normalizedAddress("17.253.144.10") == "17.253.144.10")
+        #expect(FirewallScript.normalizedAddress("2606:4700::1111") == "2606:4700::1111")
+        #expect(FirewallScript.normalizedAddress("1.2.3") == nil)
+        #expect(FirewallScript.normalizedAddress("1.2.3.4; reboot") == nil)
+    }
+
+    @Test func pfRules() {
+        #expect(FirewallScript.pfRules(addresses: ["1.2.3.4", "2001:db8::1"]) == [
+            "block drop out quick inet from any to 1.2.3.4", "block drop in quick inet from 1.2.3.4 to any",
+            "block drop out quick inet6 from any to 2001:db8::1", "block drop in quick inet6 from 2001:db8::1 to any",
+        ])
+    }
+
+    @Test func pfAcceptsGeneratedRules() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("remon-pf-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let rules = FirewallScript.pfRules(addresses: ["17.253.144.10", "2606:4700::1111"]).joined(separator: "\n") + "\n"
+        try rules.write(to: file, atomically: true, encoding: .utf8)
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/sbin/pfctl")
+        p.arguments = ["-n", "-f", file.path] // parse only; no root needed
+        p.standardError = FileHandle.nullDevice
+        try p.run()
+        p.waitUntilExit()
+        #expect(p.terminationStatus == 0)
+    }
+
+    @Test func hostsScriptRoundTrip() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("remon-hosts-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hosts = dir.appendingPathComponent("hosts")
+        let original = "127.0.0.1\tlocalhost\n255.255.255.255\tbroadcasthost\n::1             localhost\n"
+        try original.write(to: hosts, atomically: true, encoding: .utf8)
+
+        func run(_ domains: [String]) throws -> String {
+            let script = FirewallScript.shell(domains: domains, addresses: [], kill: [], hostsPath: hosts.path, pfctl: nil)
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/sh")
+            p.arguments = ["-c", script]
+            try p.run()
+            p.waitUntilExit()
+            #expect(p.terminationStatus == 0)
+            return try String(contentsOf: hosts, encoding: .utf8)
+        }
+
+        let blocked = try run(["swscan.apple.com", "mesu.apple.com"])
+        #expect(blocked.hasPrefix(original))
+        #expect(blocked.contains("0.0.0.0 swscan.apple.com\n:: swscan.apple.com"))
+        #expect(FirewallScript.activeDomains(inHosts: blocked) == ["swscan.apple.com", "mesu.apple.com"])
+
+        // Re-applying replaces the managed block instead of appending another one.
+        let replaced = try run(["mesu.apple.com"])
+        #expect(FirewallScript.activeDomains(inHosts: replaced) == ["mesu.apple.com"])
+        #expect(replaced.components(separatedBy: FirewallScript.beginMarker).count == 2)
+
+        // Unblocking everything restores the original file exactly.
+        #expect(try run([]) == original)
+        #expect(FileManager.default.fileExists(atPath: hosts.path + ".remon-backup"))
+    }
+
+    @Test func appleScriptEscaping() {
+        let script = FirewallScript.shell(domains: ["a.com"], addresses: ["1.2.3.4"], kill: ["1.2.3.4"])
+        let escaped = FirewallScript.appleScriptEscaped(script)
+        #expect(!escaped.contains("\\n'") || escaped.contains("\\\\n"))
+        #expect(!escaped.replacingOccurrences(of: "\\\"", with: "").contains("\""))
+        #expect(script.contains("/sbin/pfctl -q -a 'com.apple/remon' -f \"$P\""))
+        #expect(script.contains("/sbin/pfctl -q -k 0.0.0.0/0 -k 1.2.3.4"))
+    }
+}
+
+@Suite("system metrics")
+struct SystemMetricsTests {
+    @Test func samplerReadsLiveValues() async {
+        let sampler = SystemSampler()
+        _ = await sampler.sample()
+        try? await Task.sleep(for: .milliseconds(300))
+        let s = await sampler.sample()
+        #expect(!s.perCore.isEmpty)
+        #expect(s.perCore.allSatisfy { (0...1).contains($0) })
+        #expect(s.memory.total > 0 && s.memory.used > 0 && s.memory.used <= s.memory.total)
+        #expect(s.uptime > 0)
+        #expect(s.loadAverage.count == 3)
+    }
+}

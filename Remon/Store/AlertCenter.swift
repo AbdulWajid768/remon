@@ -12,6 +12,7 @@ struct AlertRule: Identifiable, Codable, Hashable, Sendable {
         case dataPlan = "Data plan usage reaches"
         case connectivity = "Connection lost or restored"
         case publicIP = "Public IP address changes"
+        case highTemperature = "CPU temperature above"
         var id: String { rawValue }
 
         var symbol: String {
@@ -24,11 +25,20 @@ struct AlertRule: Identifiable, Codable, Hashable, Sendable {
             case .dataPlan: "chart.pie"
             case .connectivity: "wifi.exclamationmark"
             case .publicIP: "network.badge.shield.half.filled"
+            case .highTemperature: "thermometer.high"
             }
         }
         /// Event-style rules fire on a change rather than a measured value.
-        var usesThreshold: Bool { self == .totalRate || self == .appRate || self == .dailyTotal || self == .dataPlan }
-        var usesDuration: Bool { self == .totalRate || self == .appRate }
+        var usesThreshold: Bool { self == .totalRate || self == .appRate || self == .dailyTotal || self == .dataPlan || self == .highTemperature }
+        var usesDuration: Bool { self == .totalRate || self == .appRate || self == .highTemperature }
+        /// Thresholds that are plain numbers (percent, °C) rather than byte quantities.
+        var thresholdUnit: String? {
+            switch self {
+            case .dataPlan: "%"
+            case .highTemperature: "°C"
+            default: nil
+            }
+        }
     }
 
     var id = UUID()
@@ -53,6 +63,7 @@ struct AlertRule: Identifiable, Codable, Hashable, Sendable {
         case .dataPlan: "Data plan reaches \(Int(threshold))% of its limit"
         case .connectivity: "Notify when the Mac goes offline or comes back"
         case .publicIP: "Notify when your public IP or VPN state changes"
+        case .highTemperature: "CPU above \(Int(threshold)) °C for \(sustainSeconds)s"
         }
     }
 
@@ -66,6 +77,7 @@ struct AlertRule: Identifiable, Codable, Hashable, Sendable {
         AlertRule(name: "Data plan used up", kind: .dataPlan, threshold: 100),
         AlertRule(name: "Connectivity changes", kind: .connectivity, cooldownMinutes: 1),
         AlertRule(name: "Public IP / VPN changes", kind: .publicIP, cooldownMinutes: 1),
+        AlertRule(name: "Running hot", kind: .highTemperature, threshold: 95, sustainSeconds: 30, cooldownMinutes: 30),
     ]
 }
 
@@ -158,8 +170,16 @@ final class AlertCenter {
                     fire(rule, key: rule.id.uuidString + app.id, now: tick.now,
                          message: "\(app.name) connected to the network for the first time.", respectCooldown: false, appID: app.id)
                 }
-            case .anomaly, .dataPlan, .connectivity, .publicIP:
-                break // event-driven, see `report(_:)`
+            case .anomaly, .dataPlan, .connectivity, .publicIP, .highTemperature:
+                break // event-driven, see `report(_:)` / `evaluateTemperature(_:)`
+            }
+        }
+    }
+
+    func evaluateTemperature(_ celsius: Double, now: Date = Date()) {
+        for rule in rules where rule.isEnabled && rule.kind == .highTemperature {
+            sustained(rule, key: rule.id.uuidString, exceeded: celsius > rule.threshold, now: now) {
+                "The CPU has been above \(Int(rule.threshold)) °C for \(rule.sustainSeconds) seconds (now \(Int(celsius)) °C)."
             }
         }
     }

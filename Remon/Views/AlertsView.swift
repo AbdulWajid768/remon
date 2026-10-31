@@ -156,7 +156,7 @@ struct AlertRuleEditor: View {
                             TextField("", text: $thresholdText, prompt: Text("e.g. 5 MB"))
                                 .frame(width: 120)
                                 .multilineTextAlignment(.trailing)
-                            Text(rule.kind == .dailyTotal ? "" : "per second").foregroundStyle(.secondary)
+                            Text(rule.kind.thresholdUnit ?? (rule.kind == .dailyTotal ? "" : "per second")).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -175,7 +175,11 @@ struct AlertRuleEditor: View {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Save") {
-                    if let value = ByteFormat.parse(thresholdText) { rule.threshold = value }
+                    if rule.kind.thresholdUnit != nil {
+                        if let value = Double(thresholdText.filter { $0.isNumber || $0 == "." }) { rule.threshold = value }
+                    } else if let value = ByteFormat.parse(thresholdText) {
+                        rule.threshold = value
+                    }
                     onSave(rule)
                     dismiss()
                 }
@@ -185,6 +189,18 @@ struct AlertRuleEditor: View {
             .padding(16)
         }
         .frame(width: 460)
-        .onAppear { thresholdText = ByteFormat.bytes(rule.threshold) }
+        .onAppear {
+            thresholdText = rule.kind.thresholdUnit != nil ? String(Int(rule.threshold)) : ByteFormat.bytes(rule.threshold)
+        }
+        .onChange(of: rule.kind) { _, kind in
+            // Switching kinds changes the threshold's unit; start from a sensible default.
+            switch kind {
+            case .dataPlan: rule.threshold = 80
+            case .highTemperature: rule.threshold = 90
+            case .dailyTotal: rule.threshold = 10_000_000_000
+            default: rule.threshold = 5_000_000
+            }
+            thresholdText = kind.thresholdUnit != nil ? String(Int(rule.threshold)) : ByteFormat.bytes(rule.threshold)
+        }
     }
 }

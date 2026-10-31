@@ -31,6 +31,7 @@ struct MainView: View {
     @ViewBuilder private var detail: some View {
         switch store.section {
         case .overview: OverviewView()
+        case .system: SystemView()
         case .apps: AppsView()
         case .connections: ConnectionsView()
         case .map: MapView()

@@ -64,6 +64,7 @@ final class Preferences {
             GlobalHotKey.shared.setEnabled(hotKeyEnabled)
         }
     }
+    var menuBarShowsSystem: Bool { didSet { defaults.set(menuBarShowsSystem, forKey: "menuBarShowsSystem") } }
     var lastDigestDay: String { didSet { defaults.set(lastDigestDay, forKey: "lastDigestDay") } }
 
     var menuBarStyle: MenuBarStyle { didSet { defaults.set(menuBarStyle.rawValue, forKey: "menuBarStyle") } }
@@ -106,6 +107,7 @@ final class Preferences {
         digestHour = defaults.integer(forKey: "digestHour")
         hotKeyEnabled = defaults.bool(forKey: "hotKeyEnabled")
         lastDigestDay = defaults.string(forKey: "lastDigestDay") ?? ""
+        menuBarShowsSystem = defaults.bool(forKey: "menuBarShowsSystem")
     }
 
     func applyAppearance() {

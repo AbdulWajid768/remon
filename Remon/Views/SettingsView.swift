@@ -60,6 +60,8 @@ private struct GeneralSettings: View {
                     ForEach(MenuBarStyle.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .disabled(!preferences.showMenuBarItem)
+                Toggle("Also show CPU load and temperature", isOn: $preferences.menuBarShowsSystem)
+                    .disabled(!preferences.showMenuBarItem)
                 Toggle("Colored graph", isOn: $preferences.coloredMenuBarGraph)
                     .disabled(!preferences.showMenuBarItem || preferences.menuBarStyle == .rates || preferences.menuBarStyle == .icon)
                 LabeledContent("Preview") { MenuBarLabel() }

@@ -50,9 +50,11 @@ Status tags: **[Shipped]** is implemented in this build, **[Stub]** is implement
 - A first-run learning period seeds the "known apps" list silently instead of firing dozens of alerts.
 - An in-app alert log is always kept. macOS notifications are optional.
 
-### A8. Blocking / firewall rules [Stub]
-- Rules UI to deny or allow an app, globally or for a single host. Rules are persisted.
-- Enforcement goes through a `ConnectionPolicyEnforcer` protocol. This build ships `UnavailableNetworkExtensionEnforcer`, which reports *why* enforcement is unavailable: it needs an `NEFilterDataProvider` system extension, a Developer ID, the `com.apple.developer.networking.networkextension` entitlement and user approval. The UI says plainly that rules are **not enforced**.
+### A8. Blocking / firewall rules [Shipped in v1.2 for domains and servers; per-app = Future]
+- Block **domains** system-wide through a managed `/etc/hosts` block, and **servers** (IPs) through a `pf` anchor (`com.apple/remon`). Live connections to a blocked server are killed.
+- Presets for macOS Software Update, Google Chrome updates and Microsoft AutoUpdate.
+- Changes go through the standard macOS administrator prompt. The UI shows whether rules are active, pending, or need re-applying after a restart.
+- Blocking an *app* outright needs an `NEFilterDataProvider` system extension (Developer ID, the Network Extension entitlement, user approval). That remains the extension point behind `ConnectionPolicyEnforcer`.
 
 ### A9. Robustness [Shipped]
 - If `nettop` is unavailable or exits, the app shows a clear status, keeps interface-level monitoring running, and retries with backoff. This responds to the research finding that users hate tools that fail silently.
@@ -139,6 +141,15 @@ Status tags: **[Shipped]** is implemented in this build, **[Stub]** is implement
 | C12. Color themes | [Shipped] | Five presets |
 | C13. Per-app 7-day chart | [Shipped] | Apps inspector |
 | C14. Widgets | [Future] | Needs an App Group, so a Developer ID team |
+
+## Part D — v1.2
+
+| Feature | Status | Notes |
+|---|---|---|
+| D1. System metrics: CPU per core (E/P), GPU, memory and pressure, temperatures, fans, power, battery, disk I/O | [Shipped] | Mach/IOKit; HID temperature sensors; read-only SMC |
+| D2. System readout in the menu bar, menu panel and floating monitor; temperature alert; Shortcuts action | [Shipped] | |
+| D3. Real blocking of domains (`/etc/hosts`) and servers (`pf` anchor `com.apple/remon`), with presets for macOS / Chrome / Microsoft updates | [Shipped] | Admin prompt; server rules re-apply after a restart |
+| D4. Map: stable camera, globe mode with full zoom-out, Fit All | [Shipped] | Fixes the zoom-out bug |
 
 ## Out of scope for this build
 - Packet capture or HTTP(S) inspection (the Charles/Proxyman domain). It needs a proxy, a root CA and user trust.

@@ -58,7 +58,11 @@ struct ConnectionsView: View {
             }
             .width(min: 90, ideal: 120)
             TableColumn("State", value: \.state) { c in
-                Text(c.isClosed ? "Closed" : c.displayState).foregroundStyle(c.isClosed ? .tertiary : .secondary)
+                if store.policy.isBlocked(address: c.remote.bareAddress) {
+                    Label("Blocked", systemImage: "hand.raised.fill").foregroundStyle(.red)
+                } else {
+                    Text(c.isClosed ? "Closed" : c.displayState).foregroundStyle(c.isClosed ? .tertiary : .secondary)
+                }
             }
             .width(min: 70, ideal: 90)
             TableColumn("↓ Rate", value: \.rateIn) { c in RateText(rate: c.rateIn, direction: .down) }
@@ -152,6 +156,10 @@ struct ConnectionContextMenu: View {
             store.section = .apps
         }
         Button("Filter by This Host") { store.searchText = "ip:\(connection.remote.bareAddress) " }
+        if !connection.isListening {
+            Divider()
+            BlockServerButton(connection: connection)
+        }
         if IPClassifier.scope(of: connection.remote.bareAddress) == .publicInternet,
            let url = URL(string: "https://ipinfo.io/\(connection.remote.bareAddress)") {
             Button("Look Up on ipinfo.io") { NSWorkspace.shared.open(url) }
@@ -181,7 +189,15 @@ struct ConnectionInspector: View {
                             .font(.callout).foregroundStyle(.secondary)
                     }
                 }
-                if !c.isListening { CategoryBadge(category: c.category) }
+                if !c.isListening {
+                    HStack {
+                        CategoryBadge(category: c.category)
+                        Spacer()
+                        BlockServerButton(connection: c)
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    }
+                }
 
                 HStack(spacing: 10) {
                     block("Download", c.rateIn, Theme.download)
@@ -234,5 +250,29 @@ struct ConnectionInspector: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(color.opacity(0.1), in: .rect(cornerRadius: 10, style: .continuous))
+    }
+}
+
+/// Blocks or unblocks the connection's remote server (pf, system-wide).
+struct BlockServerButton: View {
+    var connection: ConnectionInfo
+    @Environment(MonitorStore.self) private var store
+
+    var body: some View {
+        let address = connection.remote.bareAddress
+        if store.policy.isBlocked(address: address) {
+            Button {
+                store.policy.unblock(address: address)
+            } label: {
+                Label("Unblock Server", systemImage: "hand.raised.slash")
+            }
+        } else {
+            Button(role: .destructive) {
+                store.policy.block(address: address, note: "\(connection.appName) → \(connection.displayHost)")
+            } label: {
+                Label("Block Server", systemImage: "hand.raised.fill")
+            }
+            .disabled(connection.remote.isWildcardAddress)
+        }
     }
 }

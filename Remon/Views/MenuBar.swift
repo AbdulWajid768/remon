@@ -5,6 +5,7 @@ import SwiftUI
 struct MenuBarLabel: View {
     @Environment(MonitorStore.self) private var store
     @Environment(Preferences.self) private var preferences
+    @Environment(SystemMonitor.self) private var system
 
     var body: some View {
         switch preferences.menuBarStyle {
@@ -26,7 +27,10 @@ struct MenuBarLabel: View {
             showGraph: style == .graph || style == .graphAndRates,
             showRates: style == .rates || style == .graphAndRates,
             colored: colored,
-            paused: store.isPaused
+            paused: store.isPaused,
+            systemText: preferences.menuBarShowsSystem ? system.latest.map { s in
+                ("CPU \(Int(s.cpuTotal * 100))%", s.temperature(.cpu).map { "\(Int($0.rounded()))°C" } ?? "—")
+            } : nil
         )
         let renderer = ImageRenderer(content: content)
         renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
@@ -45,9 +49,19 @@ private struct MenuBarGlyph: View {
     var showRates: Bool
     var colored: Bool
     var paused: Bool
+    var systemText: (String, String)?
 
     var body: some View {
         HStack(spacing: 4) {
+            if let systemText {
+                VStack(alignment: .trailing, spacing: -2) {
+                    Text(systemText.0)
+                    Text(systemText.1)
+                }
+                .font(.system(size: 8.5, weight: .medium).monospacedDigit())
+                .foregroundStyle(.black)
+                .frame(width: 44, alignment: .trailing)
+            }
             if showGraph {
                 Canvas { context, size in
                     let mid = size.height / 2
@@ -127,6 +141,7 @@ struct MenuBarPanel: View {
                 .font(.caption)
             }
 
+            SystemStrip()
             Divider()
             VStack(alignment: .leading, spacing: 8) {
                 Text("Top Apps").font(.caption.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
@@ -239,5 +254,32 @@ struct MenuBarPanel: View {
     private func showMainWindow() {
         openWindow(id: "main")
         NSApp.activate()
+    }
+}
+
+/// CPU / GPU / memory / temperature at a glance (menu bar panel and floating monitor).
+struct SystemStrip: View {
+    @Environment(SystemMonitor.self) private var system
+
+    var body: some View {
+        if let s = system.latest {
+            HStack(spacing: 0) {
+                metric("CPU", percent(s.cpuTotal), s.cpuTotal, .blue)
+                metric("GPU", s.gpuUtilization.map(percent) ?? "—", s.gpuUtilization ?? 0, .purple)
+                metric("MEM", percent(s.memory.fraction), s.memory.fraction, .green)
+                let temp = s.temperature(.cpu)
+                metric("TEMP", temp.map(celsius) ?? "—", min((temp ?? 0) / 100, 1), temperatureTint(temp))
+            }
+        }
+    }
+
+    private func metric(_ label: String, _ value: String, _ fraction: Double, _ tint: Color) -> some View {
+        VStack(spacing: 3) {
+            Text(label).font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+            Text(value).font(.callout.weight(.semibold).monospacedDigit())
+            ProgressView(value: min(max(fraction, 0), 1)).tint(tint).controlSize(.mini)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 4)
     }
 }

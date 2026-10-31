@@ -69,6 +69,21 @@ struct RunSpeedTestIntent: AppIntent {
     }
 }
 
+struct GetSystemStatusIntent: AppIntent {
+    static let title: LocalizedStringResource = "Get System Status"
+    static let description = IntentDescription("Returns CPU, GPU and memory load and the CPU temperature.")
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
+        guard let s = SystemMonitor.shared.latest else { return .result(value: "", dialog: "Remon is still reading sensors.") }
+        var parts = ["CPU \(percent(s.cpuTotal))", "memory \(percent(s.memory.fraction))"]
+        if let gpu = s.gpuUtilization { parts.insert("GPU \(percent(gpu))", at: 1) }
+        if let temp = s.temperature(.cpu) { parts.append("CPU temperature \(celsius(temp))") }
+        let text = parts.joined(separator: ", ")
+        return .result(value: text, dialog: "\(text)")
+    }
+}
+
 struct RemonShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(intent: GetThroughputIntent(), phrases: ["How fast is my network in \(.applicationName)",
@@ -78,6 +93,9 @@ struct RemonShortcuts: AppShortcutsProvider {
                     shortTitle: "Today's Usage", systemImageName: "calendar")
         AppShortcut(intent: GetTopAppIntent(), phrases: ["Which app is using the network in \(.applicationName)"],
                     shortTitle: "Busiest App", systemImageName: "flame")
+        AppShortcut(intent: GetSystemStatusIntent(), phrases: ["How hot is my Mac in \(.applicationName)",
+                                                               "Get system status from \(.applicationName)"],
+                    shortTitle: "System Status", systemImageName: "cpu")
         AppShortcut(intent: RunSpeedTestIntent(), phrases: ["Run a speed test in \(.applicationName)"],
                     shortTitle: "Speed Test", systemImageName: "speedometer")
     }
