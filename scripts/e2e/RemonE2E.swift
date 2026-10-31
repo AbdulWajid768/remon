@@ -134,7 +134,20 @@ var skippedKeys = 0
 
 /// Sends a key event to Remon only — posted to its process, and only while it is frontmost — so a
 /// focus change can never redirect test keystrokes into someone else's app.
-func key(_ code: CGKeyCode, _ flags: CGEventFlags = []) {
+/// `requireFrontmost: false` is for Remon's own non-activating menu bar panel; the event is still
+/// posted to Remon's process only, so it can't reach another app.
+func key(_ code: CGKeyCode, _ flags: CGEventFlags = [], requireFrontmost: Bool = true) {
+    if !requireFrontmost {
+        let src = CGEventSource(stateID: .combinedSessionState)
+        for down in [true, false] {
+            let e = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: down)!
+            e.flags = flags
+            e.postToPid(remonPID)
+            wait(0.03)
+        }
+        wait(0.5)
+        return
+    }
     guard activate() else { skippedKeys += 1; print("    (skipped key: Remon is not frontmost)"); return }
     let src = CGEventSource(stateID: .combinedSessionState)
     for down in [true, false] {
@@ -210,6 +223,21 @@ func sidebarRow(_ name: String) -> AX? {
     }
 }
 
+/// The section's data table. SwiftUI `Table` reports itself as AXOutline on macOS 26 (AXTable on
+/// older systems). Breadth-first, so it never wanders into a 2,000-row table's cells.
+func findTable() -> AX? {
+    guard let w = mainWindow else { return nil }
+    var queue: [(AX, Int)] = [(w, 0)]
+    while !queue.isEmpty {
+        let (e, d) = queue.removeFirst()
+        let r = e.role
+        if r == "AXTable" || (r == "AXOutline" && e.desc != "Sidebar") { return e }
+        if r == "AXOutline" || d > 12 { continue }
+        queue += e.children.map { ($0, d + 1) }
+    }
+    return nil
+}
+
 func sectionTitle() -> String { mainWindow.map { String($0.title.split(separator: "–").first ?? "").trimmingCharacters(in: .whitespaces) } ?? "" }
 
 // MARK: - Scenarios
@@ -281,14 +309,15 @@ func connectionsSearch() {
     print("Connections + search")
     key(Key.digit(4), .maskCommand)
     wait(1.5)
-    guard let table = mainWindow?.first(maxDepth: 12, { $0.role == "AXTable" }) else {
+    guard let table = findTable() else {
         check(false, "connections table exists"); return
     }
     let before = table.rows.count
     check(before > 0, "connections table has rows (\(before))")
     key(Key.f, .maskCommand)
-    let field = mainWindow?.first { $0.subrole == "AXSearchField" }
-    check(field.map { ($0.attr(kAXFocusedAttribute) as? Bool) == true } ?? false, "⌘F focuses the search field")
+    let field = mainWindow?.first(maxDepth: 8, { $0.subrole == "AXSearchField" })
+    let focused = app.attr(kAXFocusedUIElementAttribute).map { AX(element: $0 as! AXUIElement) }
+    check(focused?.subrole == "AXSearchField" || focused?.role == "AXTextField", "⌘F focuses the search field (focused: \(focused?.description ?? "nothing"))")
     type("proto:tcp ")
     wait(1.2)
     let rows = table.rows
@@ -299,7 +328,7 @@ func connectionsSearch() {
     if let field { field.set(kAXFocusedAttribute, kCFBooleanTrue); key(Key.a, .maskCommand); key(Key.delete) }
     wait(1)
     let after = table.rows.count
-    check(after >= rows.count, "clearing search restores rows (\(after))")
+    check(after > rows.count, "clearing search restores the other rows (\(rows.count) → \(after))")
 }
 
 func quickOpen() {
@@ -335,7 +364,7 @@ func appsInspector() {
     print("Apps + inspector")
     key(Key.digit(3), .maskCommand)
     wait(1.5)
-    guard let table = mainWindow?.first(maxDepth: 12, { $0.role == "AXTable" }), let row = table.rows.first else {
+    guard let table = findTable(), let row = table.rows.first else {
         check(false, "apps table has rows"); return
     }
     row.set(kAXSelectedAttribute, kCFBooleanTrue)
@@ -357,7 +386,7 @@ func historyAndLog() {
     screenshot("14-history-week")
     key(Key.digit(7), .maskCommand)
     wait(1.5)
-    let rows = mainWindow?.first(maxDepth: 12, { $0.role == "AXTable" })?.rows.count ?? 0
+    let rows = findTable()?.rows.count ?? 0
     check(rows > 0, "connection log has entries (\(rows))")
     screenshot("15-log")
 }
@@ -405,65 +434,75 @@ func menuBarItem() {
           let item = extras.children.first else { check(false, "status item exists"); return }
     check(item.label.contains("Remon") || !item.label.isEmpty, "status item has an accessible label (\(item.label.prefix(60)))")
     item.press()
-    check(waitFor(3) { windows.contains { $0.texts().contains("Top Apps") } }, "clicking the status item opens the panel")
-    if let panel = windows.first(where: { $0.texts().contains("Top Apps") }) {
+    let isPanel: (AX) -> Bool = { $0.subrole == "AXSystemDialog" || $0.texts().contains { $0.caseInsensitiveCompare("Top Apps") == .orderedSame } }
+    check(waitFor(3) { windows.contains(where: isPanel) }, "clicking the status item opens the panel")
+    if let panel = windows.first(where: isPanel) {
         let t = panel.texts()
         check(t.contains("Download") && t.contains("Upload") && t.contains("Today"), "panel shows rates and today's totals")
         check(t.contains("CPU") && t.contains("TEMP"), "panel shows the system strip")
+        let unlabeled = panel.all { $0.role == "AXButton" && ["pip", "gearshape", "Power", "Speed"].contains($0.desc) }
+        check(unlabeled.isEmpty, "panel buttons have spoken labels (\(unlabeled.map(\.desc)))")
     }
-    key(Key.escape)
-    check(waitFor(2) { !windows.contains { $0.texts().contains("Top Apps") } }, "Escape closes the panel")
+    key(Key.escape, requireFrontmost: false)
+    check(waitFor(2) { !windows.contains(where: isPanel) }, "Escape closes the panel")
+    item.press()
+    check(waitFor(3) { windows.contains(where: isPanel) }, "the status item reopens the panel after Escape")
+    item.press()
+    _ = waitFor(2) { !windows.contains(where: isPanel) }
 }
 
 func export() {
     print("Export")
-    let name = "remon-e2e-\(Int(Date().timeIntervalSince1970)).csv"
-    key(Key.digit(4), .maskCommand)
+    let name = "remon-e2e-\(Int(Date().timeIntervalSince1970))"
+    pressMenu("View", "Connections")
     key(Key.e, .maskCommand)
-    check(waitFor(4) { windows.contains { $0.title.hasPrefix("Export") } || sheet(of: mainWindow) != nil }, "⌘E opens the export save panel")
-    wait(0.6)
-    key(Key.a, .maskCommand)
-    type(name)
-    key(Key.ret)
-    wait(2)
-    let candidates = ["Desktop", "Documents", "Downloads"].map { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("\($0)/\(name)") }
-    let found = candidates.first { FileManager.default.fileExists(atPath: $0.path) }
-    check(found != nil, "export wrote \(name)")
-    if let found, let text = try? String(contentsOf: found, encoding: .utf8) {
+    let panel = { windows.first { $0.title.hasPrefix("Export") } }
+    check(waitFor(4) { panel() != nil }, "⌘E opens the export save panel")
+    guard let p = panel() else { return }
+    let folder = p.first(maxDepth: 20, { $0.role == "AXPopUpButton" })?.value ?? "Documents"
+    // Set the file name the way a user's typing would end up, then press Save.
+    p.first(maxDepth: 20, { $0.role == "AXTextField" && $0.desc != "tag editor" })?.set(kAXValueAttribute, name as CFString)
+    wait(0.3)
+    p.first(maxDepth: 20, { $0.role == "AXButton" && $0.title == "Save" })?.press()
+    let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("\(folder)/\(name).csv")
+    check(waitFor(4) { FileManager.default.fileExists(atPath: file.path) }, "export wrote \(folder)/\(name).csv")
+    if let text = try? String(contentsOf: file, encoding: .utf8) {
         check(text.hasPrefix("app,process,pid,protocol"), "export has the CSV header")
         check(text.split(separator: "\n").count > 1, "export has data rows (\(text.split(separator: "\n").count - 1))")
-        try? FileManager.default.removeItem(at: found)
+        try? FileManager.default.removeItem(at: file)
     }
 }
 
+var authDialogOnScreen: Bool {
+    let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+    return list.contains { ($0[kCGWindowOwnerName as String] as? String) == "SecurityAgent" }
+}
+
 func blockingCancel() {
-    print("Blocking (cancel at the admin prompt)")
-    if let row = sidebarRow("Rules") { row.set(kAXSelectedAttribute, kCFBooleanTrue) }
+    print("Blocking (cancel at the admin prompt — never types a password)")
+    pressMenu("View", "Rules")
     _ = waitFor(3) { sectionTitle() == "Rules" }
-    let toggle = mainWindow?.all { $0.role == "AXCheckBox" }.first
-    guard let toggle else { check(false, "macOS Software Update quick-block switch exists"); return }
+    let switchNamed = { (name: String) in mainWindow?.first(maxDepth: 30, { $0.role == "AXCheckBox" && $0.desc == name }) }
+    guard let toggle = switchNamed("Block macOS Software Update") else { check(false, "“Block macOS Software Update” switch is reachable"); return }
+    check(toggle.enabled, "“Block macOS Software Update” switch is reachable and labelled")
     toggle.press()
-    // The macOS authorization dialog appears (SecurityAgent). Cancel it — never type a password.
-    let appeared = waitFor(8) {
-        NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.SecurityAgent").isEmpty == false
-    }
+    let appeared = waitFor(8) { authDialogOnScreen }
     check(appeared, "turning on a block asks for an administrator password")
     if appeared {
-        wait(1)
+        wait(0.8)
         cancelAuthorizationDialog()
-        _ = waitFor(5) { NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.SecurityAgent").isEmpty }
+        check(waitFor(5) { !authDialogOnScreen }, "the password prompt can be cancelled")
     }
     check(waitFor(5) { mainWindow?.texts().contains("Rules not applied") == true }, "cancelling shows “Rules not applied”")
     screenshot("18-rules-cancelled")
-    // Undo: switch the preset back off (this applies an empty rule set → prompts again → cancel).
-    mainWindow?.all { $0.role == "AXCheckBox" }.first?.press()
-    if waitFor(8, { !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.SecurityAgent").isEmpty }) {
-        wait(1)
-        cancelAuthorizationDialog()
-    }
-    wait(2)
+    // Switching it back off restores the original state, which needs no password.
+    switchNamed("Block macOS Software Update")?.press()
+    let prompted = waitFor(3) { authDialogOnScreen }
+    if prompted { cancelAuthorizationDialog() }
+    check(!prompted, "switching the block back off doesn't ask for a password again")
+    check(waitFor(4) { mainWindow?.texts().contains("Nothing blocked") == true }, "status returns to “Nothing blocked”")
     let hosts = (try? String(contentsOfFile: "/etc/hosts", encoding: .utf8)) ?? ""
-    check(!hosts.contains("BEGIN REMON"), "/etc/hosts untouched after cancelling")
+    check(!hosts.contains("BEGIN REMON"), "/etc/hosts untouched")
 }
 
 func quit() {

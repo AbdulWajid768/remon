@@ -99,6 +99,8 @@ struct MenuBarPanel: View {
     @Environment(MonitorStore.self) private var store
     @Environment(Preferences.self) private var preferences
     @Environment(\.openWindow) private var openWindow
+    @State private var panelWindow: NSWindow?
+    @State private var escapeMonitor: Any?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -185,6 +187,7 @@ struct MenuBarPanel: View {
                     Image(systemName: "pip")
                 }
                 .help("Floating monitor")
+                .accessibilityLabel("Floating Monitor")
                 Button {
                     store.section = .speedTest
                     showMainWindow()
@@ -193,6 +196,7 @@ struct MenuBarPanel: View {
                     Image(systemName: "speedometer")
                 }
                 .help("Run a speed test")
+                .accessibilityLabel("Run Speed Test")
                 .disabled(store.speedTestRunning)
                 Button {
                     store.togglePause()
@@ -200,22 +204,53 @@ struct MenuBarPanel: View {
                     Image(systemName: store.isPaused ? "play.fill" : "pause.fill")
                 }
                 .help(store.isPaused ? "Resume" : "Pause")
+                .accessibilityLabel(store.isPaused ? "Resume Live Updates" : "Pause Live Updates")
                 SettingsLink {
                     Image(systemName: "gearshape")
                 }
                 .help("Settings")
+                .accessibilityLabel("Settings")
                 Button {
                     NSApp.terminate(nil)
                 } label: {
                     Image(systemName: "power")
                 }
                 .help("Quit Remon")
+                .accessibilityLabel("Quit Remon")
                 .keyboardShortcut("q")
             }
             .buttonStyle(.borderless)
         }
         .padding(16)
         .frame(width: 340)
+        // Escape closes the panel, like the system's menu bar extras. The window-style MenuBarExtra
+        // never becomes key, so responder-based handling (onExitCommand) can't see the key; watch
+        // Remon's key events while the panel is on screen instead.
+        .background(WindowReader { panelWindow = $0 })
+        .onAppear {
+            escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                guard event.keyCode == 53, let window = panelWindow, window.isVisible else { return event }
+                Self.dismissPanel(fallback: window)
+                return nil
+            }
+        }
+        .onDisappear {
+            if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+            escapeMonitor = nil
+        }
+    }
+
+    /// Closes the panel the way a click on the menu bar item does, so MenuBarExtra's own
+    /// open/closed state stays in sync (closing the window directly made the next click a no-op).
+    static func dismissPanel(fallback window: NSWindow) {
+        func statusButton(in view: NSView?) -> NSStatusBarButton? {
+            guard let view else { return nil }
+            if let button = view as? NSStatusBarButton { return button }
+            for sub in view.subviews { if let hit = statusButton(in: sub) { return hit } }
+            return nil
+        }
+        let button = NSApp.windows.lazy.compactMap { statusButton(in: $0.contentView) }.first
+        if let button { button.performClick(nil) } else { window.close() }
     }
 
     private var header: some View {
@@ -223,6 +258,7 @@ struct MenuBarPanel: View {
             Image(systemName: "waveform.path.ecg")
                 .font(.headline)
                 .foregroundStyle(LinearGradient(colors: [.blue, .purple], startPoint: .leading, endPoint: .trailing))
+                .accessibilityHidden(true)
             Text("Remon").font(.headline)
             Spacer()
             HStack(spacing: 5) {
@@ -281,5 +317,27 @@ struct SystemStrip: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 4)
+    }
+}
+
+/// Reports the NSWindow hosting a SwiftUI view (each time it's attached to one).
+struct WindowReader: NSViewRepresentable {
+    var onWindow: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> NSView { Reader(onWindow: onWindow) }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    final class Reader: NSView {
+        let onWindow: (NSWindow?) -> Void
+        init(onWindow: @escaping (NSWindow?) -> Void) {
+            self.onWindow = onWindow
+            super.init(frame: .zero)
+        }
+        required init?(coder: NSCoder) { fatalError() }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            let window = self.window
+            DispatchQueue.main.async { self.onWindow(window) }
+        }
     }
 }

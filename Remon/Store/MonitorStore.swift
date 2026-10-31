@@ -46,6 +46,8 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
+    var hasInspector: Bool { self == .apps || self == .connections }
+
     static let monitorSections: [SidebarSection] = [.overview, .system, .apps, .connections, .map, .history, .log]
     static let toolSections: [SidebarSection] = [.speedTest, .alerts, .rules]
 }
@@ -111,6 +113,8 @@ final class MonitorStore {
     var connectionScope: ConnectionScope = .active
     var showOnboarding = false
     var isHUDVisible = false
+    /// Bumped by the Find command (⌘F) to move focus into the toolbar search field.
+    var focusSearchRequest = 0
 
     static let throughputWindow = 300
     static let appHistoryLength = 120

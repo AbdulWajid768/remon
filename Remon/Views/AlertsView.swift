@@ -104,14 +104,11 @@ private struct RuleRow: View {
             }
             Spacer()
             Button("Edit…", action: onEdit).buttonStyle(.borderless)
-            Toggle("Enabled", isOn: Binding(
+            AccessibleSwitch(label: "\(rule.name) enabled", isOn: Binding(
                 get: { rule.isEnabled },
                 set: { newValue in
                     if let i = store.alerts.rules.firstIndex(where: { $0.id == rule.id }) { store.alerts.rules[i].isEnabled = newValue }
                 }))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
         }
         .contextMenu {
             Button("Edit…", action: onEdit)

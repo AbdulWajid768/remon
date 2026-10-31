@@ -86,17 +86,6 @@ struct AppsView: View {
             .padding(.horizontal, 12).padding(.vertical, 6)
             .background(.bar)
         }
-        .inspector(isPresented: $store.showInspector) {
-            Group {
-                if let app = store.app(id: store.selectedAppID) {
-                    AppInspector(app: app)
-                } else {
-                    ContentUnavailableView("No Selection", systemImage: "app.dashed",
-                                           description: Text("Select an app to see its traffic, connections and history."))
-                }
-            }
-            .inspectorColumnWidth(min: 280, ideal: 320, max: 440)
-        }
     }
 }
 

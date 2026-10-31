@@ -3,6 +3,12 @@ import SwiftUI
 struct MainView: View {
     @Environment(MonitorStore.self) private var store
     @Environment(Preferences.self) private var preferences
+    @FocusState private var searchFocused: Bool
+
+    private var inspectorBinding: Binding<Bool> {
+        Binding(get: { store.showInspector && store.section.hasInspector },
+                set: { if store.section.hasInspector { store.showInspector = $0 } })
+    }
 
     var body: some View {
         @Bindable var store = store
@@ -10,10 +16,19 @@ struct MainView: View {
             Sidebar()
                 .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
         } detail: {
-            detail
+            // One inspector for the whole detail column. Per-section inspectors were recreated on every
+            // section switch and could come back hidden while the toggle still said "shown"; attaching
+            // it to the split view itself instead caused a constraint-update loop on macOS 26.
+            Group { detail }
                 .frame(minWidth: 560)
+                .inspector(isPresented: inspectorBinding) {
+                    SectionInspector()
+                        .inspectorColumnWidth(min: 280, ideal: 320, max: 440)
+                }
         }
         .searchable(text: $store.searchText, placement: .toolbar, prompt: searchPrompt)
+        .searchFocused($searchFocused)
+        .onChange(of: store.focusSearchRequest) { searchFocused = true }
         .searchSuggestions { SearchSuggestions() }
         .toolbar { MainToolbar() }
         .sheet(isPresented: $store.showOnboarding) {
@@ -226,6 +241,32 @@ private struct DemoLaunchHooks: ViewModifier {
             if defaults.bool(forKey: "openSettings") { openSettings() }
             if defaults.bool(forKey: "quickOpen") { store.isQuickOpenPresented = true }
             if defaults.bool(forKey: "previewMenuPanel") { openWindow(id: "menu-preview") }
+        }
+    }
+}
+
+/// Inspector content for the current section.
+struct SectionInspector: View {
+    @Environment(MonitorStore.self) private var store
+
+    var body: some View {
+        switch store.section {
+        case .apps:
+            if let app = store.app(id: store.selectedAppID) {
+                AppInspector(app: app)
+            } else {
+                ContentUnavailableView("No Selection", systemImage: "app.dashed",
+                                       description: Text("Select an app to see its traffic, connections and history."))
+            }
+        case .connections:
+            if let c = store.connection(id: store.selectedConnectionID) {
+                ConnectionInspector(connection: c)
+            } else {
+                ContentUnavailableView("No Selection", systemImage: "cursorarrow.click",
+                                       description: Text("Select a connection to see its endpoints, owner and location."))
+            }
+        default:
+            EmptyView()
         }
     }
 }

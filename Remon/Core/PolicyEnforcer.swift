@@ -334,6 +334,13 @@ final class PolicyCenter {
 
     func apply() async {
         guard !isApplying else { return }
+        refreshActiveDomains()
+        // Nothing to change (e.g. a block was switched on, the password prompt cancelled, then switched
+        // back off): don't ask for an administrator password just to re-apply the current state.
+        guard needsApply else {
+            lastError = nil
+            return
+        }
         isApplying = true
         defer { isApplying = false }
         let domains = enabledDomains, addresses = enabledAddresses

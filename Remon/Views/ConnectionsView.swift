@@ -111,17 +111,6 @@ struct ConnectionsView: View {
             .padding(.horizontal, 12).padding(.vertical, 6)
             .background(.bar)
         }
-        .inspector(isPresented: $store.showInspector) {
-            Group {
-                if let c = store.connection(id: store.selectedConnectionID) {
-                    ConnectionInspector(connection: c)
-                } else {
-                    ContentUnavailableView("No Selection", systemImage: "cursorarrow.click",
-                                           description: Text("Select a connection to see its endpoints, owner and location."))
-                }
-            }
-            .inspectorColumnWidth(min: 280, ideal: 320, max: 440)
-        }
     }
 
     private func serviceText(_ c: ConnectionInfo) -> String {

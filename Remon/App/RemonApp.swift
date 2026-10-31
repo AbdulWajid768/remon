@@ -204,6 +204,10 @@ struct RemonCommands: Commands {
             .keyboardShortcut("i", modifiers: [.command, .option])
             Divider()
         }
+        CommandGroup(after: .textEditing) {
+            Button("Find…") { store.focusSearchRequest += 1 }
+                .keyboardShortcut("f")
+        }
         CommandMenu("Monitor") {
             Button("Quick Open…") { store.isQuickOpenPresented = true }
                 .keyboardShortcut("k")

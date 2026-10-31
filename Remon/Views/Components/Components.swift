@@ -196,6 +196,17 @@ struct ThroughputChart: View {
         .chartLegend(.hidden)
         .chartXSelection(value: interactive ? $hovered : .constant(nil))
         .animation(animated ? .easeOut(duration: 0.45) : nil, value: points.last?.date)
+        // Read as one summary instead of one element per sample ("10:55:19 pm to 10:55:24 pm"…).
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Network throughput, last \(Int(window / 60) > 0 ? "\(Int(window / 60)) minutes" : "\(Int(window)) seconds")")
+        .accessibilityValue(accessibilitySummary)
+    }
+
+    private var accessibilitySummary: String {
+        guard let last = points.last else { return "No data yet" }
+        let peakIn = points.map(\.rateIn).max() ?? 0, peakOut = points.map(\.rateOut).max() ?? 0
+        return "Now: download \(preferences.rate(last.rateIn)), upload \(preferences.rate(last.rateOut)). "
+            + "Peak: download \(preferences.rate(peakIn)), upload \(preferences.rate(peakOut))."
     }
 
     private func nearest(to date: Date) -> ThroughputPoint? {
@@ -409,5 +420,25 @@ struct UsageRing: View {
                 .stroke(tint.gradient, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
         }
+    }
+}
+
+/// A compact on/off switch that assistive technologies can operate. A label-hidden `.switch`
+/// toggle inside a grouped Form exposes no AXPress action and no settable value on macOS 26, so
+/// VoiceOver / Switch Control (and UI tests) couldn't flip it — add the action explicitly.
+struct AccessibleSwitch: View {
+    var label: String
+    @Binding var isOn: Bool
+    var small = true
+
+    var body: some View {
+        Toggle(label, isOn: $isOn)
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(small ? .small : .regular)
+            .accessibilityLabel(label)
+            .accessibilityValue(isOn ? "On" : "Off")
+            .accessibilityAddTraits(.isToggle)
+            .accessibilityAction(.default) { isOn.toggle() }
     }
 }

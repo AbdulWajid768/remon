@@ -22,8 +22,9 @@ struct RulesView: View {
                             Text(preset.domains.joined(separator: ", ")).font(.caption2.monospaced()).foregroundStyle(.tertiary)
                         }
                         Spacer()
-                        Toggle("Block", isOn: Binding(get: { policy.isActive(preset) }, set: { _ in policy.toggle(preset) }))
-                            .labelsHidden().toggleStyle(.switch)
+                        AccessibleSwitch(label: "Block \(preset.name)",
+                                         isOn: Binding(get: { policy.isActive(preset) }, set: { _ in policy.toggle(preset) }),
+                                         small: false)
                     }
                     .padding(.vertical, 2)
                 }
@@ -121,8 +122,8 @@ struct RulesView: View {
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background((active ? Color.red : .orange).opacity(0.12), in: .capsule)
                     }
-                    Toggle("Enabled", isOn: Binding(get: { rule.isEnabled }, set: { policy.setEnabled(rule.id, $0) }))
-                        .labelsHidden().toggleStyle(.switch).controlSize(.small)
+                    AccessibleSwitch(label: "Block \(rule.value)",
+                                     isOn: Binding(get: { rule.isEnabled }, set: { policy.setEnabled(rule.id, $0) }))
                     Button(role: .destructive) { policy.remove([rule.id]) } label: { Image(systemName: "trash") }
                         .buttonStyle(.borderless)
                         .help("Unblock and remove")
