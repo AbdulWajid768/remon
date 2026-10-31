@@ -295,6 +295,11 @@ struct StatTile: View {
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.separator.opacity(0.6), lineWidth: 0.5)
         }
+        // One VoiceOver element per tile ("Download, 974 B/s, Peak 7 KB/s"); numeric-transition
+        // text on its own exposes an empty value.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue([value, detail].compactMap { $0 }.joined(separator: ", "))
     }
 }
 

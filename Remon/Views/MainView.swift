@@ -85,8 +85,12 @@ struct Sidebar: View {
     }
 
     private func row(_ section: SidebarSection) -> some View {
-        Label(section.rawValue, systemImage: section.symbol)
-            .badge(badge(for: section))
+        let count = badge(for: section)
+        return Label(section.rawValue, systemImage: section.symbol)
+            .badge(count)
+            // With a badge, macOS exposes only the number to VoiceOver; name the row explicitly.
+            .accessibilityLabel(section.rawValue)
+            .accessibilityValue(count > 0 ? "\(count)" : "")
             .tag(section)
     }
 

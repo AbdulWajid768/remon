@@ -20,6 +20,11 @@ struct RemonApp: App {
                 .frame(minWidth: 900, minHeight: 560)
         }
         .defaultSize(width: 1200, height: 780)
+        // Don't restore a "closed" main window on relaunch — launching Remon from Finder/Spotlight
+        // would otherwise show nothing (and a pending onboarding sheet would never appear).
+        // Menu-bar-only users (no Dock icon) who've finished onboarding start without the window.
+        .restorationBehavior(.disabled)
+        .defaultLaunchBehavior(preferences.showDockIcon || !preferences.hasCompletedOnboarding ? .presented : .suppressed)
         .commands { RemonCommands(store: store) }
 
         MenuBarExtra(isInserted: $preferences.showMenuBarItem) {
@@ -102,6 +107,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private var sigtermSource: DispatchSourceSignal?
+
+    // Remon keeps running in the menu bar when its window is closed.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    // Clicking the Dock icon (or launching again) with no window open brings the main window back.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { MainActor.assumeIsolated { MonitorStore.shared.show(appID: nil) } }
+        return true
+    }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         flushHistorySynchronously()

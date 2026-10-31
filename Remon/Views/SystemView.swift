@@ -321,7 +321,13 @@ private struct BatteryCard: View {
                     }
                 }
                 ProgressView(value: battery.percent).tint(battery.percent < 0.2 ? .red : .green)
-                if let health = battery.healthPercent { DetailRow(label: "Health", value: "\(Int(health * 100))% of design capacity") }
+                if let maximum = battery.maximumCapacity {
+                    DetailRow(label: "Maximum capacity", value: "\(Int((maximum * 100).rounded()))%" + (battery.condition.map { " · \($0)" } ?? ""))
+                }
+                if let raw = battery.rawCapacity, let design = battery.designCapacity, let rawHealth = battery.rawHealth {
+                    DetailRow(label: "Raw charge capacity", value: "\(raw.formatted()) of \(design.formatted()) mAh (\(Int((rawHealth * 100).rounded()))%)")
+                        .help("What the battery gauge measures right now versus its design capacity. macOS's Maximum Capacity is normalized by the system and usually reads a few points higher.")
+                }
                 if let cycles = battery.cycleCount { DetailRow(label: "Cycle count", value: "\(cycles)") }
                 if let temp = battery.temperature { DetailRow(label: "Temperature", value: String(format: "%.1f °C", temp)) }
             }

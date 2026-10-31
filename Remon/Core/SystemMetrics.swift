@@ -33,8 +33,56 @@ struct BatteryReading: Hashable, Sendable {
     var onAC: Bool
     var minutesRemaining: Int?
     var cycleCount: Int?
-    var healthPercent: Double?
+    /// "Maximum Capacity" exactly as macOS reports it (System Settings › Battery › Battery Health).
+    var maximumCapacity: Double?
+    /// "Normal" / "Service Recommended", as macOS reports it.
+    var condition: String?
+    /// Raw gauge figures (mAh): what the cells hold now vs. when new. Apple's figure above is normalized
+    /// by powerd and is usually a few points higher than raw/design.
+    var rawCapacity: Int?
+    var designCapacity: Int?
     var temperature: Double?
+
+    var rawHealth: Double? {
+        guard let raw = rawCapacity, let design = designCapacity, design > 0 else { return nil }
+        return min(Double(raw) / Double(design), 1)
+    }
+}
+
+/// macOS's own battery-health numbers. powerd computes "Maximum Capacity" itself and doesn't publish
+/// it in the IORegistry, so read it the documented way (`system_profiler SPPowerDataType -json`,
+/// ~0.1 s) and cache it — it changes over weeks, not seconds.
+enum BatteryHealthReader {
+    struct Health: Sendable { var maximumCapacity: Double?; var condition: String? }
+
+    static func read() -> Health? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/system_profiler")
+        process.arguments = ["SPPowerDataType", "-json"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return parse(data)
+    }
+
+    static func parse(_ data: Data) -> Health? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = json["SPPowerDataType"] as? [[String: Any]],
+              let info = items.lazy.compactMap({ $0["sppower_battery_health_info"] as? [String: Any] }).first else { return nil }
+        let percent = (info["sppower_battery_health_maximum_capacity"] as? String)
+            .flatMap { Double($0.filter { $0.isNumber || $0 == "." }) }.map { $0 / 100 }
+        let condition = (info["sppower_battery_health"] as? String).map { raw -> String in
+            switch raw.lowercased() {
+            case "good": "Normal"
+            case "fair", "poor", "check battery", "service recommended": "Service Recommended"
+            default: raw
+            }
+        }
+        return Health(maximumCapacity: percent, condition: condition)
+    }
 }
 
 struct MemoryReading: Hashable, Sendable {
@@ -95,6 +143,7 @@ struct SystemSnapshot: Sendable {
 actor SystemSampler {
     private var previousTicks: [[UInt32]] = []
     private var previousDisk: (read: UInt64, write: UInt64, date: Date)?
+    private var batteryHealth: (value: BatteryHealthReader.Health?, date: Date)?
     private let hid = HIDTemperatureReader()
     private let smc = SMCReader()
     private let coreLayout = SystemSampler.readCoreLayout()
@@ -121,7 +170,7 @@ actor SystemSampler {
             gpuUtilization: gpu.utilization, gpuMemory: gpu.memory,
             sensors: hid?.read() ?? [], gpuTemperatureSMC: smc?.gpuTemperature(),
             fans: smc?.fans() ?? [], systemPowerWatts: smc?.systemPower(),
-            battery: Self.battery(), diskReadRate: readRate, diskWriteRate: writeRate,
+            battery: battery(), diskReadRate: readRate, diskWriteRate: writeRate,
             diskFree: volume?.volumeAvailableCapacityForImportantUsage.map { UInt64(max($0, 0)) },
             diskTotal: volume?.volumeTotalCapacity.map { UInt64(max($0, 0)) },
             thermalState: ProcessInfo.processInfo.thermalState, uptime: Self.uptime())
@@ -270,7 +319,17 @@ actor SystemSampler {
 
     // MARK: Battery
 
-    private static func battery() -> BatteryReading? {
+    private func battery() -> BatteryReading? {
+        guard var reading = Self.batteryBasics() else { return nil }
+        if batteryHealth == nil || Date().timeIntervalSince(batteryHealth!.date) > 600 {
+            batteryHealth = (BatteryHealthReader.read(), Date())
+        }
+        reading.maximumCapacity = batteryHealth?.value?.maximumCapacity
+        reading.condition = batteryHealth?.value?.condition
+        return reading
+    }
+
+    private static func batteryBasics() -> BatteryReading? {
         guard let blob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
               let sources = IOPSCopyPowerSourcesList(blob)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
         for source in sources {
@@ -290,9 +349,8 @@ actor SystemSampler {
                     IORegistryEntryCreateCFProperty(service, key as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? NSNumber
                 }
                 reading.cycleCount = prop("CycleCount")?.intValue
-                if let raw = prop("AppleRawMaxCapacity")?.doubleValue, let design = prop("DesignCapacity")?.doubleValue, design > 0 {
-                    reading.healthPercent = min(raw / design, 1)
-                }
+                reading.rawCapacity = prop("AppleRawMaxCapacity")?.intValue
+                reading.designCapacity = prop("DesignCapacity")?.intValue
                 if let temp = prop("Temperature")?.doubleValue { reading.temperature = temp / 100 }
             }
             return reading

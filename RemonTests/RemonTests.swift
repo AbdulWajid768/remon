@@ -411,3 +411,33 @@ struct SystemMetricsTests {
         #expect(s.loadAverage.count == 3)
     }
 }
+
+@Suite("battery health")
+struct BatteryHealthTests {
+    @Test func parsesSystemProfilerJSON() {
+        let json = #"{"SPPowerDataType":[{"_name":"spbattery_information","sppower_battery_health_info":{"sppower_battery_cycle_count":66,"sppower_battery_health":"Good","sppower_battery_health_maximum_capacity":"99%"}}]}"#
+        let health = BatteryHealthReader.parse(Data(json.utf8))
+        #expect(health?.maximumCapacity == 0.99)
+        #expect(health?.condition == "Normal")
+    }
+
+    @Test func noBatteryMeansNil() {
+        #expect(BatteryHealthReader.parse(Data(#"{"SPPowerDataType":[{"_name":"sppower_ac_charger_information"}]}"#.utf8)) == nil)
+    }
+
+    @Test func matchesSystemInformationOnThisMac() throws {
+        // On a Mac with a battery, Remon must show exactly what System Information shows.
+        guard let health = BatteryHealthReader.read() else { return }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/system_profiler")
+        p.arguments = ["SPPowerDataType"]
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        try p.run()
+        let text = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        p.waitUntilExit()
+        if let max = health.maximumCapacity {
+            #expect(text.contains("Maximum Capacity: \(Int((max * 100).rounded()))%"))
+        }
+    }
+}
