@@ -305,6 +305,28 @@ func system() {
     screenshot("11-system")
 }
 
+/// The search field appears only where it filters something; ⌘F elsewhere goes to Connections.
+func findFromOverview() {
+    print("Search field placement")
+    func searchField() -> AX? { mainWindow?.first(maxDepth: 8, { $0.subrole == "AXSearchField" }) }
+    func searchFocused() -> Bool {
+        let focused = app.attr(kAXFocusedUIElementAttribute).map { AX(element: $0 as! AXUIElement) }
+        return focused?.subrole == "AXSearchField" || focused?.role == "AXTextField"
+    }
+    key(Key.digit(1), .maskCommand)
+    check(waitFor(3) { sectionTitle() == "Overview" }, "⌘1 opens Overview")
+    check(waitFor(2) { searchField() == nil }, "Overview has no search field")
+    key(Key.f, .maskCommand)
+    check(waitFor(3) { sectionTitle() == "Connections" }, "⌘F on Overview switches to Connections (title: \(sectionTitle()))")
+    check(waitFor(3) { searchFocused() }, "… and focuses the search field")
+    key(Key.escape); wait(0.5)
+    key(Key.digit(1), .maskCommand); wait(1)
+    key(Key.digit(3), .maskCommand)
+    check(waitFor(3) { sectionTitle() == "Apps" && searchField() != nil }, "Apps has a search field")
+    wait(1)
+    check(!searchFocused(), "returning to a searchable section doesn't refocus search")
+}
+
 func connectionsSearch() {
     print("Connections + search")
     key(Key.digit(4), .maskCommand)
@@ -592,7 +614,7 @@ func quit() {
 
 let scenarios: [(String, () -> Void)] = [
     ("onboarding", onboarding), ("navigation", navigation), ("overview", overview), ("system", system),
-    ("connections", connectionsSearch), ("quickopen", quickOpen), ("pause", pauseAndInspector), ("apps", appsInspector), ("layout", layout),
+    ("find", findFromOverview), ("connections", connectionsSearch), ("quickopen", quickOpen), ("pause", pauseAndInspector), ("apps", appsInspector), ("layout", layout),
     ("history", historyAndLog), ("alerts", alertsEditor), ("settings", settingsWindow), ("hud", floatingMonitor),
     ("menubar", menuBarItem), ("export", export), ("blocking", blockingCancel), ("quit", quit),
 ]

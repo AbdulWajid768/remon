@@ -48,6 +48,9 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
 
     var hasInspector: Bool { self == .apps || self == .connections }
 
+    /// Sections whose content the toolbar search field filters. Elsewhere the field is hidden.
+    var hasSearch: Bool { [.apps, .connections, .map, .history, .log].contains(self) }
+
     static let monitorSections: [SidebarSection] = [.overview, .system, .apps, .connections, .map, .history, .log]
     static let toolSections: [SidebarSection] = [.speedTest, .alerts, .rules]
 }

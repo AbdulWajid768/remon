@@ -208,7 +208,11 @@ struct RemonCommands: Commands {
             Divider()
         }
         CommandGroup(after: .textEditing) {
-            Button("Find…") { store.focusSearchRequest += 1 }
+            Button("Find…") {
+                // Sections without a search field send ⌘F to Connections, the broadest search.
+                if !store.section.hasSearch { store.section = .connections }
+                store.focusSearchRequest += 1
+            }
                 .keyboardShortcut("f")
         }
         CommandMenu("Monitor") {

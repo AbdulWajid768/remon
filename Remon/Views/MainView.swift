@@ -3,7 +3,6 @@ import SwiftUI
 struct MainView: View {
     @Environment(MonitorStore.self) private var store
     @Environment(Preferences.self) private var preferences
-    @FocusState private var searchFocused: Bool
 
     private var inspectorBinding: Binding<Bool> {
         Binding(get: { store.showInspector && store.section.hasInspector },
@@ -24,16 +23,13 @@ struct MainView: View {
             // than the window and clipped the sidebar (and the inspector). The E2E `layout` scenario
             // checks this.
             Group { detail }
+                .modifier(SectionSearch())
                 .frame(minWidth: 340)
                 .inspector(isPresented: inspectorBinding) {
                     SectionInspector()
                         .inspectorColumnWidth(min: 280, ideal: 320, max: 440)
                 }
         }
-        .searchable(text: $store.searchText, placement: .toolbar, prompt: searchPrompt)
-        .searchFocused($searchFocused)
-        .onChange(of: store.focusSearchRequest) { searchFocused = true }
-        .searchSuggestions { SearchSuggestions() }
         .toolbar { MainToolbar() }
         .sheet(isPresented: $store.showOnboarding) {
             OnboardingView()
@@ -59,16 +55,6 @@ struct MainView: View {
         case .speedTest: SpeedTestView()
         case .alerts: AlertsView()
         case .rules: RulesView()
-        }
-    }
-
-    private var searchPrompt: String {
-        switch store.section {
-        case .apps: "Search apps, hosts, countries…"
-        case .history: "Search apps"
-        case .log: "Search app, host, IP, country, organisation"
-        case .map: "Filter destinations"
-        default: "Search — try app:Safari port:443 -cat:apple"
         }
     }
 
@@ -157,6 +143,8 @@ struct MainToolbar: ToolbarContent {
     @Environment(MonitorStore.self) private var store
 
     var body: some ToolbarContent {
+        // App-wide actions, always in the same order and in one glass group. A menu's indicator
+        // gets a capsule of its own on macOS 26, so Export hides it to stay in the group.
         ToolbarItemGroup(placement: .primaryAction) {
             Button {
                 store.togglePause()
@@ -164,6 +152,13 @@ struct MainToolbar: ToolbarContent {
                 Label(store.isPaused ? "Resume" : "Pause", systemImage: store.isPaused ? "play.fill" : "pause.fill")
             }
             .help(store.isPaused ? "Resume live updates (⇧⌘P)" : "Pause live updates (⇧⌘P)")
+
+            Button {
+                store.toggleHUD?()
+            } label: {
+                Label("Floating Monitor", systemImage: "pip")
+            }
+            .help("Show or hide the floating monitor (⌥⌘M)")
 
             Menu {
                 Button("Connections as CSV…") { ExportService.export(.connections, format: .csv, store: store) }
@@ -176,16 +171,12 @@ struct MainToolbar: ToolbarContent {
             } label: {
                 Label("Export", systemImage: "square.and.arrow.up")
             }
+            .menuIndicator(.hidden)
             .help("Export data")
+        }
 
-            Button {
-                store.toggleHUD?()
-            } label: {
-                Label("Floating Monitor", systemImage: "pip")
-            }
-            .help("Show or hide the floating monitor (⌥⌘M)")
-
-            if store.section == .apps || store.section == .connections {
+        if store.section.hasInspector {
+            ToolbarItem(placement: .primaryAction) {
                 Button {
                     withAnimation(.snappy) { store.showInspector.toggle() }
                 } label: {
@@ -193,6 +184,46 @@ struct MainToolbar: ToolbarContent {
                 }
                 .help("Toggle inspector (⌥⌘I)")
             }
+        }
+    }
+}
+
+/// The toolbar search field, shown only on sections whose content it filters.
+private struct SectionSearch: ViewModifier {
+    @Environment(MonitorStore.self) private var store
+    @FocusState private var searchFocused: Bool
+    @State private var handledFocusRequest = 0
+
+    func body(content: Content) -> some View {
+        @Bindable var store = store
+        if store.section.hasSearch {
+            content
+                .searchable(text: $store.searchText, placement: .toolbar, prompt: prompt)
+                .searchFocused($searchFocused)
+                // `initial`: ⌘F on a section without search switches here first, so the request
+                // arrives with this view, before the toolbar has built the field; focus it a moment later.
+                .onChange(of: store.focusSearchRequest, initial: true) { old, new in
+                    guard new != handledFocusRequest else { return }
+                    handledFocusRequest = new
+                    if old != new { searchFocused = true; return }
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(150))
+                        searchFocused = true
+                    }
+                }
+                .searchSuggestions { SearchSuggestions() }
+        } else {
+            content
+        }
+    }
+
+    private var prompt: String {
+        switch store.section {
+        case .apps: "Search apps, hosts, countries…"
+        case .history: "Search apps"
+        case .log: "Search app, host, IP, country, organisation"
+        case .map: "Filter destinations"
+        default: "Search — try app:Safari port:443 -cat:apple"
         }
     }
 }
