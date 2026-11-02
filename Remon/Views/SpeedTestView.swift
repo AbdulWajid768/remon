@@ -51,7 +51,8 @@ struct SpeedTestView: View {
                 }
 
                 if store.speedTestResults.count > 1 {
-                    Card("History", symbol: "chart.xyaxis.line") {
+                    Card("History", symbol: "chart.xyaxis.line",
+                         accessory: AnyView(ChartLegend(items: [("Download", Theme.download), ("Upload", Theme.upload)]))) {
                         Chart {
                             ForEach(store.speedTestResults.reversed()) { r in
                                 LineMark(x: .value("Date", r.date), y: .value("Mbps", r.download / 1e6))
@@ -63,6 +64,7 @@ struct SpeedTestView: View {
                             }
                         }
                         .chartForegroundStyleScale(["Download": Theme.download, "Upload": Theme.upload])
+                        .chartLegend(.hidden)
                         .chartYAxisLabel("Mbps")
                         .frame(height: 180)
                     }

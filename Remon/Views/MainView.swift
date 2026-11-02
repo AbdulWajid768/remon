@@ -19,8 +19,12 @@ struct MainView: View {
             // One inspector for the whole detail column. Per-section inspectors were recreated on every
             // section switch and could come back hidden while the toggle still said "shown"; attaching
             // it to the split view itself instead caused a constraint-update loop on macOS 26.
+            // Measured: the detail column's effective minimum is this value plus ~220 pt. At 560 it
+            // was ~780 pt, wider than a 900-pt window leaves, so AppKit laid the split view out wider
+            // than the window and clipped the sidebar (and the inspector). The E2E `layout` scenario
+            // checks this.
             Group { detail }
-                .frame(minWidth: 560)
+                .frame(minWidth: 340)
                 .inspector(isPresented: inspectorBinding) {
                     SectionInspector()
                         .inspectorColumnWidth(min: 280, ideal: 320, max: 440)
@@ -127,7 +131,9 @@ struct SidebarFooter: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                StatusDot(color: statusColor)
+                // Same meaning as everywhere else (Overview, menu bar panel, floating monitor):
+                // green online, red offline. Expensive / Low Data Mode are shown as words in Overview.
+                StatusDot(color: store.path.snapshot.isConnected ? .green : .red)
                 Text(store.path.statusText).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
             }
@@ -144,12 +150,6 @@ struct SidebarFooter: View {
         }
         .padding(10)
         .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 10, style: .continuous))
-    }
-
-    private var statusColor: Color {
-        if !store.path.snapshot.isConnected { return .red }
-        if store.path.snapshot.isConstrained || store.path.snapshot.isExpensive { return .yellow }
-        return .green
     }
 }
 

@@ -142,6 +142,10 @@ struct AddBlockRuleSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            Text("Block a Domain or Server")
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20).padding(.top, 18)
             Form {
                 Picker("Block", selection: $kind) {
                     Text("Domain").tag(0)

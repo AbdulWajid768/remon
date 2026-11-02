@@ -188,13 +188,14 @@ Safety rules built into the harness:
 - Exported test files are deleted afterwards.
 - The terminal running it needs Accessibility permission.
 
-**Latest run: every scenario passes.** Scenarios covered:
+**Latest run: all 82 checks pass.** Scenarios covered:
 - onboarding, run once from a fresh install;
 - ⌘1–⌘9 navigation;
 - Overview, System;
 - Connections search: ⌘F, `proto:tcp`, clear;
 - Quick Open, pause/resume, the inspector;
 - Apps selection with the inspector;
+- layout: every section at the minimum (900 pt) and default window sizes, inspector open, with nothing pushed past the window edges and no table columns hidden under the inspector;
 - History and Log;
 - the alert editor;
 - all six Settings tabs;
@@ -218,6 +219,10 @@ Memory stayed between roughly 200 and 470 MB throughout.
 | **Menu bar panel ignored Escape.** The window-style MenuBarExtra never becomes key. Closing its window directly then made the next click a no-op. | A local key monitor while the panel is visible; it dismisses via the status-bar button so MenuBarExtra's state stays in sync. Click → Escape → click reopens on the first click. |
 | **VoiceOver read raw icon names** ("pip", "gearshape", "Power"), stat tiles with empty values, a badge number instead of the sidebar row name, and a dozen date ranges for each mini chart. | Spoken labels for the icon buttons. Tiles become single elements with values. Badged rows are named. Charts read as one summary: "Now: download …, upload …. Peak: …". |
 | **An extra password prompt** when a cancelled block was switched back off. | Applying is skipped when the system already matches the rules. |
+| **Sidebar and inspector cut off** in Apps and Connections. With the inspector open, the content was 1,316 pt wide in a 1,200 pt window (and the sidebar fully off-screen at 900 pt). Two causes: the tables' column minimums didn't fit, and the detail column's effective minimum was ~780 pt (its 560-pt `minWidth` plus ~220 pt SwiftUI adds). | Tables show only the columns that fit at their ideal widths, dropping the least important first. The detail `minWidth` is now 340 pt (effective ~560 pt). The window's minimum width rises to 1,100 pt while the inspector is open, and the window grows to match. |
+| **Table columns hidden under the inspector.** A Table lays columns out at their ideal widths and scrolls sideways instead of shrinking them; adding a column made AppKit widen the others. | Column sets are chosen from ideal widths, and a new column set gets a fresh table. |
+| **Uneven rows and clipped addresses** in Connections and Log: rows were one or two lines depending on whether the hostname had resolved. | Every row has two lines: hostname over address, or address over network owner. |
+| **Inconsistencies:** rate charts labelled "50 KB" instead of "50 KB/s"; the 2-minute chart's time labels truncated; stat tiles of different heights in History and Speed Test; History tiles not filling the row; legends in three different places; CPU/GPU shown blue/purple in one System chart and orange/pink in the next; a yellow status dot in the sidebar but green everywhere else; today's History bar cut off at "now"; "Sig…" and "Session…" headers truncated. | Fixed. One shared `ChartLegend` in each card's title row. Sheet titles were added to the alert and block editors, and "Sustained for" is now a picker like "Don't repeat for". |
 
 **Memory spike seen once, unexplained.** During the very first exploratory session (Debug build, about 30 minutes), Remon's footprint reached **107 GB**: hundreds of ~125 MB large allocations, mostly swapped out. That session involved heavy, repeated accessibility-tree crawls by `System Events`, which force SwiftUI to build accessibility trees for 2,000-row tables and charts. **It has not recurred** in four complete E2E runs since, each tracking memory after every scenario (all stayed between about 190 and 470 MB). Normal navigation, the onboarding sheet and long idle periods also stay flat. The cause wasn't pinned down, so this is recorded as a known open issue, not a fix.
 

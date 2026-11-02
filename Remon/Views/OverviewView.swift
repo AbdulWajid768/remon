@@ -49,22 +49,7 @@ struct OverviewView: View {
     }
 
     private var legend: some View {
-        HStack(spacing: 12) {
-            Label("Download", systemImage: "circle.fill").foregroundStyle(Theme.download)
-            Label("Upload", systemImage: "circle.fill").foregroundStyle(Theme.upload)
-            Text("Last 5 min").foregroundStyle(.secondary)
-        }
-        .font(.caption)
-        .labelStyle(LegendLabelStyle())
-    }
-}
-
-private struct LegendLabelStyle: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 4) {
-            configuration.icon.font(.system(size: 7))
-            configuration.title.foregroundStyle(.secondary)
-        }
+        ChartLegend(items: [("Download", Theme.download), ("Upload", Theme.upload)], note: "Last 5 min")
     }
 }
 

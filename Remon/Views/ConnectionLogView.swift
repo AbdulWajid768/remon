@@ -8,6 +8,7 @@ struct ConnectionLogView: View {
     @State private var sortOrder = [KeyPathComparator(\ConnectionLogEntry.lastSeen, order: .reverse)]
     @State private var selection: ConnectionLogEntry.ID?
     @State private var loading = true
+    @State private var tableWidth: CGFloat = 1_000
 
     enum LogRange: String, CaseIterable, Identifiable {
         case hour = "Last Hour"
@@ -29,48 +30,67 @@ struct ConnectionLogView: View {
 
     var body: some View {
         let rows = entries.sorted(using: sortOrder)
+        // Show only the columns that fit at their ideal widths; see ConnectionsView for why.
+        let columns = (port: tableWidth >= 635, location: tableWidth >= 762, duration: tableWidth >= 845, category: tableWidth >= 945)
         Table(rows, selection: $selection, sortOrder: $sortOrder) {
             TableColumn("Ended", value: \.lastSeen) { e in
                 Text(e.lastSeen.formatted(date: Calendar.current.isDateInToday(e.lastSeen) ? .omitted : .abbreviated, time: .shortened))
                     .monospacedDigit().foregroundStyle(.secondary)
             }
-            .width(min: 80, ideal: 110)
+            .width(min: 70, ideal: 84)
             TableColumn("App", value: \.appName) { e in
                 HStack(spacing: 6) {
                     Image(nsImage: IconCache.shared.icon(forAppID: e.appID, name: e.appName)).resizable().frame(width: 16, height: 16)
                     Text(e.appName).lineLimit(1)
                 }
             }
-            .width(min: 120, ideal: 150)
+            .width(min: 90, ideal: 120)
             TableColumn("Destination", value: \.displayHost) { e in
+                // Always two lines so rows have one height (matches Connections).
                 VStack(alignment: .leading, spacing: 0) {
                     Text(e.displayHost).lineLimit(1).truncationMode(.middle)
-                    if e.hostname != nil { Text(e.remoteIP).font(.caption2.monospaced()).foregroundStyle(.secondary) }
+                    Text(e.hostname != nil ? e.remoteIP : (e.org ?? " "))
+                        .font(e.hostname != nil ? .caption2.monospaced() : .caption2)
+                        .foregroundStyle(.secondary).lineLimit(1)
                 }
             }
-            .width(min: 160, ideal: 230)
-            TableColumn("Location") { e in
-                Text("\(e.countryCode.map(GeoInfo.flag(for:)) ?? "") \(e.city ?? e.countryCode ?? "")").lineLimit(1).foregroundStyle(.secondary)
+            .width(min: 110, ideal: 200)
+            if columns.location {
+                TableColumn("Location") { e in
+                    if let place = e.city ?? e.countryCode {
+                        Text("\(e.countryCode.map(GeoInfo.flag(for:)) ?? "") \(place)").lineLimit(1).foregroundStyle(.secondary)
+                    } else {
+                        Text("—").foregroundStyle(.tertiary)
+                    }
+                }
+                .width(min: 70, ideal: 110)
             }
-            .width(min: 90, ideal: 130)
-            TableColumn("Port", value: \.remotePort) { e in
-                Text("\(e.proto) \(e.remotePort)").monospacedDigit().foregroundStyle(.secondary)
+            if columns.port {
+                TableColumn("Port", value: \.remotePort) { e in
+                    Text("\(e.proto) \(e.remotePort)").monospacedDigit().foregroundStyle(.secondary)
+                }
+                .width(min: 56, ideal: 70)
             }
-            .width(min: 70, ideal: 80)
-            TableColumn("Category", value: \.category) { e in
-                Text(e.category).foregroundStyle(.secondary).lineLimit(1)
+            if columns.category {
+                TableColumn("Category", value: \.category) { e in
+                    Text(e.category).foregroundStyle(.secondary).lineLimit(1)
+                }
+                .width(min: 64, ideal: 84)
             }
-            .width(min: 80, ideal: 110)
-            TableColumn("Duration", value: \.duration) { e in
-                Text(Duration.seconds(e.duration).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .narrow, maximumUnitCount: 2)))
-                    .monospacedDigit().foregroundStyle(.secondary)
+            if columns.duration {
+                TableColumn("Duration", value: \.duration) { e in
+                    Text(Duration.seconds(e.duration).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .narrow, maximumUnitCount: 2)))
+                        .monospacedDigit().foregroundStyle(.secondary)
+                }
+                .width(min: 50, ideal: 64)
             }
-            .width(min: 60, ideal: 80)
             TableColumn("Data", value: \.totalBytes) { e in
                 Text(ByteFormat.bytes(e.totalBytes)).monospacedDigit()
             }
-            .width(min: 60, ideal: 80)
+            .width(min: 50, ideal: 70)
         }
+        .id([columns.port, columns.location, columns.duration, columns.category])  // see ConnectionsView
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tableWidth = $0 }
         .contextMenu(forSelectionType: ConnectionLogEntry.ID.self) { ids in
             if let id = ids.first, let e = entries.first(where: { $0.id == id }) {
                 Button("Copy Destination") {

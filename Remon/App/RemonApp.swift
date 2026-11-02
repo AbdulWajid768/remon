@@ -17,7 +17,10 @@ struct RemonApp: App {
                 .environment(preferences)
                 .environment(system)
                 .modifier(WindowActionInstaller(store: store))
-                .frame(minWidth: 900, minHeight: 560)
+                // Sidebar (~210) + detail column (~560 effective minimum, see MainView) + inspector
+                // (~320) don't fit in 900 pt; with less room AppKit lays the split view out wider than
+                // the window and clips both sides. So the window needs more room while it's shown.
+                .frame(minWidth: store.showInspector && store.section.hasInspector ? 1_100 : 900, minHeight: 560)
         }
         .defaultSize(width: 1200, height: 780)
         // Don't restore a "closed" main window on relaunch — launching Remon from Finder/Spotlight

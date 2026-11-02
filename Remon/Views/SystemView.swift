@@ -11,10 +11,10 @@ struct SystemView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     tiles(s)
                     HStack(alignment: .top, spacing: 16) {
-                        Card("CPU & GPU Load", symbol: "cpu", accessory: AnyView(legend([("CPU", .blue), ("GPU", .purple)]))) {
+                        Card("CPU & GPU Load", symbol: "cpu", accessory: AnyView(ChartLegend(items: [("CPU", .blue), ("GPU", .purple)]))) {
                             loadChart.frame(height: 170)
                         }
-                        Card("Temperatures", symbol: "thermometer.medium", accessory: AnyView(legend([("CPU", .orange), ("GPU", .pink)]))) {
+                        Card("Temperatures", symbol: "thermometer.medium", accessory: AnyView(ChartLegend(items: [("CPU", .blue), ("GPU", .purple)]))) {
                             temperatureChart.frame(height: 170)
                         }
                     }
@@ -89,27 +89,19 @@ struct SystemView: View {
         return Chart {
             ForEach(system.history) { p in
                 if let t = p.cpuTemperature {
+                    // Same CPU/GPU colours as the load chart next to it.
                     LineMark(x: .value("Time", p.date), y: .value("°C", t), series: .value("Series", "CPU"))
-                        .foregroundStyle(.orange).interpolationMethod(.monotone)
+                        .foregroundStyle(.blue).interpolationMethod(.monotone)
                 }
                 if let t = p.gpuTemperature {
                     LineMark(x: .value("Time", p.date), y: .value("°C", t), series: .value("Series", "GPU"))
-                        .foregroundStyle(.pink).interpolationMethod(.monotone)
+                        .foregroundStyle(.purple).interpolationMethod(.monotone)
                 }
             }
         }
         .chartYScale(domain: low...high)
-        .chartYAxis { AxisMarks { v in AxisGridLine(); AxisValueLabel { Text("\(v.as(Int.self) ?? 0)°") } } }
+        .chartYAxis { AxisMarks { v in AxisGridLine(); AxisValueLabel { Text("\(v.as(Int.self) ?? 0) °C") } } }
         .chartXAxis(.hidden)
-    }
-
-    private func legend(_ items: [(String, Color)]) -> some View {
-        HStack(spacing: 8) {
-            ForEach(items, id: \.0) { item in
-                HStack(spacing: 3) { Circle().fill(item.1).frame(width: 6, height: 6); Text(item.0) }
-            }
-        }
-        .font(.caption2).foregroundStyle(.secondary)
     }
 
     private func thermalText(_ state: ProcessInfo.ThermalState) -> String {

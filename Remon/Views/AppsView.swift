@@ -7,6 +7,7 @@ struct AppsView: View {
     @State private var sortOrder = [KeyPathComparator(\AppTraffic.totalRate, order: .reverse)]
     @State private var onlyActive = false
     @State private var onlyUnsigned = false
+    @State private var tableWidth: CGFloat = 1_000
 
     var body: some View {
         @Bindable var store = store
@@ -17,42 +18,52 @@ struct AppsView: View {
             .filter { query.isEmpty || query.matches($0, connections: store.connections(forApp: $0.id)) }
             .sorted(using: sortOrder)
 
+        // Show only the columns that fit at their ideal widths; see ConnectionsView for why.
+        let columns = (session: tableWidth >= 655, activity: tableWidth >= 775, conns: tableWidth >= 840)
         Table(rows, selection: $store.selectedAppID, sortOrder: $sortOrder) {
             TableColumn("App", value: \.name) { app in
                 AppLabel(identity: app.identity)
             }
-            .width(min: 180, ideal: 240)
+            .width(min: 120, ideal: 160)
             TableColumn("Signed") { app in
                 SignatureBadge(info: store.signing[app.id], compact: true)
             }
-            .width(min: 36, ideal: 44, max: 60)
+            .width(60)
             TableColumn("Download", value: \.rateIn) { app in
                 RateText(rate: app.rateIn, direction: .down)
             }
-            .width(min: 80, ideal: 100)
+            .width(min: 56, ideal: 84)
             TableColumn("Upload", value: \.rateOut) { app in
                 RateText(rate: app.rateOut, direction: .up)
             }
-            .width(min: 80, ideal: 100)
-            TableColumn("Activity") { app in
-                Sparkline(values: Array(app.sparkline.suffix(60)))
-                    .frame(height: 18)
+            .width(min: 56, ideal: 84)
+            if columns.activity {
+                TableColumn("Activity") { app in
+                    Sparkline(values: Array(app.sparkline.suffix(60)))
+                        .frame(height: 18)
+                }
+                .width(min: 60, ideal: 100)
             }
-            .width(min: 80, ideal: 120)
-            TableColumn("Session ↓", value: \.sessionIn) { app in
-                Text(ByteFormat.bytes(app.sessionIn)).monospacedDigit().foregroundStyle(.secondary)
+            if columns.session {
+                TableColumn("Session ↓", value: \.sessionIn) { app in
+                    Text(ByteFormat.bytes(app.sessionIn)).monospacedDigit().foregroundStyle(.secondary)
+                }
+                .width(min: 76, ideal: 80)
+                TableColumn("Session ↑", value: \.sessionOut) { app in
+                    Text(ByteFormat.bytes(app.sessionOut)).monospacedDigit().foregroundStyle(.secondary)
+                }
+                .width(min: 76, ideal: 80)
             }
-            .width(min: 70, ideal: 85)
-            TableColumn("Session ↑", value: \.sessionOut) { app in
-                Text(ByteFormat.bytes(app.sessionOut)).monospacedDigit().foregroundStyle(.secondary)
+            if columns.conns {
+                TableColumn("Conns", value: \.connectionCount) { app in
+                    Text(app.connectionCount == 0 ? "—" : "\(app.connectionCount)").monospacedDigit()
+                        .foregroundStyle(app.connectionCount == 0 ? .tertiary : .primary)
+                }
+                .width(min: 36, ideal: 50)
             }
-            .width(min: 70, ideal: 85)
-            TableColumn("Conns", value: \.connectionCount) { app in
-                Text(app.connectionCount == 0 ? "—" : "\(app.connectionCount)").monospacedDigit()
-                    .foregroundStyle(app.connectionCount == 0 ? .tertiary : .primary)
-            }
-            .width(min: 44, ideal: 54)
         }
+        .id([columns.session, columns.activity, columns.conns])  // see ConnectionsView
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tableWidth = $0 }
         .contextMenu(forSelectionType: String.self) { ids in
             if let id = ids.first, let app = store.app(id: id) {
                 AppContextMenu(app: app)
@@ -184,7 +195,7 @@ struct AppInspector: View {
                         .chartYAxis {
                             AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
                                 AxisGridLine()
-                                AxisValueLabel { if let v = value.as(Double.self) { Text(ByteFormat.bytes(v)).font(.caption2) } }
+                                AxisValueLabel { if let v = value.as(Double.self) { Text(ByteFormat.compactBytes(v)).font(.caption2) } }
                             }
                         }
                         .chartXAxis { AxisMarks(values: .stride(by: .day)) { _ in AxisValueLabel(format: .dateTime.weekday(.narrow)) } }

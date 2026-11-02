@@ -324,11 +324,18 @@ func connectionsSearch() {
     let protocols = rows.prefix(25).flatMap { $0.texts(includeTables: true) }.filter { ["TCP", "UDP", "QUIC"].contains($0) }
     check(!rows.isEmpty && protocols.allSatisfy { $0 == "TCP" }, "proto:tcp leaves only TCP rows (\(rows.count) rows)")
     screenshot("12-connections-search")
-    // Clear the query.
+    // Clearing the query must bring the UDP rows back. Check in the "All" scope: active UDP sockets
+    // (DNS lookups) can close within seconds, but the system's UDP listeners stay put.
+    mainWindow?.first { $0.role == "AXRadioButton" && $0.label == "All" }?.press()
+    wait(1.2)
+    let tcpOnly = findTable()?.rows.count ?? 0
     if let field { field.set(kAXFocusedAttribute, kCFBooleanTrue); key(Key.a, .maskCommand); key(Key.delete) }
-    wait(1)
-    let after = table.rows.count
-    check(after > rows.count, "clearing search restores the other rows (\(rows.count) → \(after))")
+    wait(1.2)
+    let cleared = findTable()?.rows ?? []
+    let hasUDP = cleared.prefix(300).contains { $0.texts(includeTables: true).contains("UDP") }
+    check(field?.value.isEmpty != false && hasUDP,
+          "clearing search brings back the UDP rows (\(tcpOnly) TCP-only → \(cleared.count) in All)")
+    mainWindow?.first { $0.role == "AXRadioButton" && $0.label == "Active" }?.press()
 }
 
 func quickOpen() {
@@ -373,6 +380,66 @@ func appsInspector() {
     check(texts.contains("Last 2 Minutes"), "selecting an app shows its inspector")
     check(texts.contains("Connections") || texts.contains { $0.hasPrefix("Connections (") }, "inspector lists the app's connections")
     screenshot("13-apps-inspector")
+}
+
+/// Every section must fit inside the window, inspector included, at the minimum and default window
+/// sizes. A table whose column minimums exceed the room left by the sidebar and inspector makes
+/// AppKit lay the split view out wider than the window, clipping the sidebar and inspector.
+func layout() {
+    print("Layout (content fits the window)")
+    guard let w = mainWindow else { check(false, "main window exists"); return }
+    let original = w.frame
+    func resize(_ size: CGSize) {
+        var s = size
+        w.set(kAXSizeAttribute, AXValueCreate(.cgSize, &s)!)
+        wait(1.2)
+    }
+    func splitView() -> AX? {
+        var queue: [(AX, Int)] = [(w, 0)]
+        while !queue.isEmpty {
+            let (e, d) = queue.removeFirst()
+            if e.role == "AXSplitGroup" { return e }
+            if d < 4 { queue += e.children.map { ($0, d + 1) } }
+        }
+        return nil
+    }
+    let sections = ["Overview", "System", "Apps", "Connections", "Map", "History", "Log", "Speed Test", "Alerts"]
+    for size in [CGSize(width: 900, height: 640), CGSize(width: 1200, height: 780)] {
+        key(Key.digit(1), .maskCommand)  // a section without an inspector, so the window can reach `size`
+        _ = waitFor(3) { sectionTitle() == "Overview" }
+        resize(size)
+        let requested = w.frame
+        var overflowing: [String] = []
+        for (i, name) in sections.enumerated().map({ ($0.offset, $0.element) }) + [(9, "Rules")] {
+            if name == "Rules" { sidebarRow("Rules")?.set(kAXSelectedAttribute, kCFBooleanTrue) } else { key(Key.digit(i + 1), .maskCommand) }
+            _ = waitFor(3) { sectionTitle() == name }
+            if name == "Apps" || name == "Connections" { findTable()?.rows.first?.set(kAXSelectedAttribute, kCFBooleanTrue) }
+            wait(1.5)
+            // The window may grow to make room for the inspector; compare against its current frame.
+            let frame = w.frame
+            guard let split = splitView()?.frame else { overflowing.append("\(name) (no split view)"); continue }
+            if split.minX < frame.minX - 1 || split.maxX > frame.maxX + 1 {
+                overflowing.append(String(format: "%@ (%.0f pt in a %.0f pt window)", name, split.width, frame.width))
+            }
+            // Columns wider than the table scroll sideways, and the ones past the edge sit hidden
+            // under the inspector.
+            if ["Apps", "Connections", "Log"].contains(name), let table = findTable() {
+                let columns = (table.attr("AXColumns") as? [AXUIElement] ?? []).map { AX(element: $0).frame }
+                if let last = columns.map(\.maxX).max(), last > table.frame.maxX + 1 {
+                    overflowing.append(String(format: "%@ columns (%.0f pt of columns in a %.0f pt table)",
+                                              name, last - table.frame.minX, table.frame.width))
+                }
+            }
+        }
+        check(overflowing.isEmpty, "every section fits, starting from a \(Int(requested.width))×\(Int(requested.height)) window"
+              + (overflowing.isEmpty ? "" : ": \(overflowing.joined(separator: ", "))"))
+        if Int(size.width) == 900 { screenshot("19-layout-min-rules") }
+    }
+    key(Key.digit(3), .maskCommand)
+    wait(1.5)
+    screenshot("20-layout-apps-inspector")
+    var s = original.size
+    w.set(kAXSizeAttribute, AXValueCreate(.cgSize, &s)!)
 }
 
 func historyAndLog() {
@@ -507,7 +574,9 @@ func blockingCancel() {
 
 func quit() {
     print("Quit")
+    let skipped = skippedKeys
     key(Key.q, .maskCommand)
+    skippedKeys = skipped  // ⌘Q quits on key-down, so the key-up has nowhere to go; that's expected.
     let gone = waitFor(6) { NSRunningApplication(processIdentifier: remonPID) == nil || NSRunningApplication(processIdentifier: remonPID)!.isTerminated }
     check(gone, "⌘Q quits")
     wait(1)
@@ -523,7 +592,7 @@ func quit() {
 
 let scenarios: [(String, () -> Void)] = [
     ("onboarding", onboarding), ("navigation", navigation), ("overview", overview), ("system", system),
-    ("connections", connectionsSearch), ("quickopen", quickOpen), ("pause", pauseAndInspector), ("apps", appsInspector),
+    ("connections", connectionsSearch), ("quickopen", quickOpen), ("pause", pauseAndInspector), ("apps", appsInspector), ("layout", layout),
     ("history", historyAndLog), ("alerts", alertsEditor), ("settings", settingsWindow), ("hud", floatingMonitor),
     ("menubar", menuBarItem), ("export", export), ("blocking", blockingCancel), ("quit", quit),
 ]
@@ -540,13 +609,18 @@ func footprintMB() -> Double {
 let startFootprint = footprintMB()
 print(String(format: "Remon footprint at start: %.0f MB", startFootprint))
 for (name, run) in scenarios where requested.isEmpty || requested.contains(name) {
+    if name == "quit" {
+        // Measure before quitting: afterwards there is no process to read.
+        let growth = footprintMB() - startFootprint
+        check(growth < 400, String(format: "memory stays bounded during the run (%+.0f MB)", growth))
+    }
     if name != "onboarding" && name != "quit" { ensureMainWindow() }
     run()
     if name != "quit" { print(String(format: "    footprint after %@: %.0f MB", name, footprintMB())) }
 }
-if requested.isEmpty || !requested.contains("quit") {
+if !requested.isEmpty && !requested.contains("quit") {
     let growth = footprintMB() - startFootprint
-    check(growth < 400, String(format: "memory stays bounded during the run (+%.0f MB)", growth))
+    check(growth < 400, String(format: "memory stays bounded during the run (%+.0f MB)", growth))
 }
 print("\n\(passes) passed, \(failures.count) failed" + (skippedKeys > 0 ? ", \(skippedKeys) keystrokes skipped because Remon wasn't frontmost" : ""))
 for f in failures { print("  ✘ \(f)") }

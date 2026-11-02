@@ -24,6 +24,9 @@ enum ByteFormat {
         return (v < 10 ? String(format: "%.1f", v) : String(format: "%.0f", v)) + " " + suffix
     }
 
+    /// Compact byte count for chart axes: "50 MB", "2.5 GB" (no trailing zeros like "50.0 MB").
+    static func compactBytes(_ value: Double) -> String { compactRate(value) }
+
     private static func scaled(_ value: Double, units: [String]) -> String {
         var v = value, i = 0
         while v >= 1000 && i < units.count - 1 { v /= 1000; i += 1 }

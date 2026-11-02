@@ -180,14 +180,32 @@ struct ThroughputChart: View {
         }
         .chartXScale(domain: now.addingTimeInterval(-window)...now)
         .chartYScale(domain: -peak * 1.1...peak * 1.1)
-        .chartXAxis(showsAxes ? .automatic : .hidden)
+        .chartXAxis {
+            if showsAxes {
+                if window <= 180 {
+                    // Short windows (the 2-minute inspector chart): whole minutes only, away from the
+                    // edges. The default 30-s ticks print seconds and truncate ("6:16:54 p…"), and a
+                    // tick at the very edge gets its label clipped.
+                    AxisMarks(values: minuteTicks(start: now.addingTimeInterval(-window), end: now)) { _ in
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 3]))
+                        AxisValueLabel(format: .dateTime.hour().minute())
+                    }
+                } else {
+                    AxisMarks(values: .automatic(desiredCount: 5)) { _ in
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 3]))
+                        AxisValueLabel(format: .dateTime.hour().minute())
+                    }
+                }
+            }
+        }
         .chartYAxis {
             if showsAxes {
                 AxisMarks(position: .leading, values: .automatic(desiredCount: 5)) { value in
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 3]))
                     AxisValueLabel {
                         if let v = value.as(Double.self) {
-                            Text(preferences.compactRate(abs(v))).font(.caption2).monospacedDigit()
+                            // These are rates, so label them as rates ("50 KB/s", not "50 KB").
+                            Text(preferences.compactRate(abs(v)) + (preferences.useBits ? "ps" : "/s")).font(.caption2).monospacedDigit()
                         }
                     }
                 }
@@ -207,6 +225,13 @@ struct ThroughputChart: View {
         let peakIn = points.map(\.rateIn).max() ?? 0, peakOut = points.map(\.rateOut).max() ?? 0
         return "Now: download \(preferences.rate(last.rateIn)), upload \(preferences.rate(last.rateOut)). "
             + "Peak: download \(preferences.rate(peakIn)), upload \(preferences.rate(peakOut))."
+    }
+
+    private func minuteTicks(start: Date, end: Date) -> [Date] {
+        guard let first = Calendar.current.nextDate(after: start.addingTimeInterval(15), matching: DateComponents(second: 0),
+                                                    matchingPolicy: .nextTime) else { return [] }
+        return stride(from: first.timeIntervalSinceReferenceDate, through: end.timeIntervalSinceReferenceDate - 25, by: 60)
+            .map(Date.init(timeIntervalSinceReferenceDate:))
     }
 
     private func nearest(to date: Date) -> ThroughputPoint? {
@@ -290,9 +315,8 @@ struct StatTile: View {
                     .contentTransition(.numericText())
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                if let detail {
-                    Text(detail).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
-                }
+                // Always reserve the detail line so tiles in a row line up at the same height.
+                Text(detail ?? " ").font(.caption).foregroundStyle(.tertiary).lineLimit(1)
             }
             Spacer(minLength: 0)
         }
@@ -311,6 +335,26 @@ struct StatTile: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
         .accessibilityValue([value, detail].compactMap { $0 }.joined(separator: ", "))
+    }
+}
+
+/// Series key shown in a card's title row, so every chart's legend sits in the same place.
+struct ChartLegend: View {
+    var items: [(String, Color)]
+    var note: String?
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ForEach(items, id: \.0) { item in
+                HStack(spacing: 4) {
+                    Circle().fill(item.1).frame(width: 7, height: 7)
+                    Text(item.0).foregroundStyle(.secondary)
+                }
+            }
+            if let note { Text(note).foregroundStyle(.secondary) }
+        }
+        .font(.caption)
+        .accessibilityElement(children: .combine)
     }
 }
 

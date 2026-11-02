@@ -50,7 +50,7 @@ struct HistoryView: View {
                 let totalIn = points.reduce(0) { $0 + $1.bytesIn }
                 let totalOut = points.reduce(0) { $0 + $1.bytesOut }
                 let peak = points.max { $0.total < $1.total }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 14)], spacing: 14) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 3), spacing: 14) {
                     StatTile(title: "Downloaded", value: ByteFormat.bytes(totalIn), symbol: "arrow.down.circle.fill", tint: Theme.download)
                     StatTile(title: "Uploaded", value: ByteFormat.bytes(totalOut), symbol: "arrow.up.circle.fill", tint: Theme.upload)
                     StatTile(title: range == .today ? "Busiest Hour" : "Busiest Day",
@@ -59,7 +59,8 @@ struct HistoryView: View {
                              symbol: "chart.bar.fill", tint: .purple)
                 }
 
-                Card(range == .today ? "Usage by Hour" : "Usage by Day", symbol: "chart.bar.xaxis") {
+                Card(range == .today ? "Usage by Hour" : "Usage by Day", symbol: "chart.bar.xaxis",
+                     accessory: AnyView(ChartLegend(items: [("Download", Theme.download), ("Upload", Theme.upload)]))) {
                     if points.isEmpty && !loading {
                         ContentUnavailableView("No History Yet", systemImage: "chart.bar",
                                                description: Text("Remon records usage every minute while it runs."))
@@ -117,14 +118,16 @@ struct HistoryView: View {
             }
         }
         .chartForegroundStyleScale(["Download": Theme.download, "Upload": Theme.upload])
+        .chartLegend(.hidden)
         .chartXSelection(value: $hovered)
         .chartYAxis {
             AxisMarks(position: .leading) { value in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 3]))
-                AxisValueLabel { if let v = value.as(Double.self) { Text(ByteFormat.bytes(v)).font(.caption2) } }
+                AxisValueLabel { if let v = value.as(Double.self) { Text(ByteFormat.compactBytes(v)).font(.caption2) } }
             }
         }
-        .chartXScale(domain: range.start...(range == .today ? Calendar.current.date(byAdding: .day, value: 1, to: range.start)! : Date()))
+        // End at midnight tonight (not "now"), so today's bar is as wide as the other days'.
+        .chartXScale(domain: range.start...Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))!)
         .animation(.smooth, value: points)
     }
 

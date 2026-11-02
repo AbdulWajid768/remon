@@ -4,6 +4,7 @@ struct ConnectionsView: View {
     @Environment(MonitorStore.self) private var store
     @Environment(Preferences.self) private var preferences
     @State private var sortOrder = [KeyPathComparator(\ConnectionInfo.totalRate, order: .reverse)]
+    @State private var tableWidth: CGFloat = 1_000
 
     var body: some View {
         @Bindable var store = store
@@ -19,6 +20,12 @@ struct ConnectionsView: View {
             .filter { query.isEmpty || query.matches($0) }
             .sorted(using: sortOrder)
 
+        // Show only the columns that fit. A Table lays columns out at their ideal widths and scrolls
+        // sideways rather than shrinking them (the extra columns ended up hidden under the inspector),
+        // and it can't shrink below the sum of their minimums at all. Each threshold is the sum of
+        // (ideal width + 17 pt cell spacing) of the columns shown at that width.
+        let columns = (service: tableWidth >= 655, location: tableWidth >= 792, state: tableWidth >= 889,
+                       total: tableWidth >= 976, rtt: tableWidth >= 1_049)
         Table(rows, selection: $store.selectedConnectionID, sortOrder: $sortOrder) {
             TableColumn("App", value: \.appName) { c in
                 HStack(spacing: 6) {
@@ -28,56 +35,72 @@ struct ConnectionsView: View {
                 }
                 .opacity(c.isClosed ? 0.45 : 1)
             }
-            .width(min: 120, ideal: 150)
+            .width(min: 80, ideal: 120)
             TableColumn("Remote Host", value: \.displayHost) { c in
+                // Always two lines, so every row has the same height (rows whose hostname resolved
+                // later used to keep a one-line height and clip the address).
                 VStack(alignment: .leading, spacing: 0) {
                     Text(c.displayHost).lineLimit(1).truncationMode(.middle)
-                    if c.hostname != nil {
-                        Text(c.remote.bareAddress).font(.caption2.monospaced()).foregroundStyle(.secondary).lineLimit(1)
-                    }
+                    Text(c.hostname != nil ? c.remote.bareAddress : (c.geo?.org ?? " "))
+                        .font(c.hostname != nil ? .caption2.monospaced() : .caption2)
+                        .foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
                 }
                 .opacity(c.isClosed ? 0.45 : 1)
             }
-            .width(min: 150, ideal: 210)
-            TableColumn("Location", value: \.locationSort) { c in
-                HStack(spacing: 4) {
-                    Text(c.geo?.flag ?? "")
-                    Text(c.geo?.placeDescription ?? (c.isListening ? "" : "…"))
-                        .lineLimit(1).foregroundStyle(.secondary)
+            .width(min: 100, ideal: 180)
+            if columns.location {
+                TableColumn("Location", value: \.locationSort) { c in
+                    HStack(spacing: 4) {
+                        Text(c.geo?.flag ?? "")
+                        Text(c.geo?.placeDescription ?? (c.isListening ? "" : "…"))
+                            .lineLimit(1).foregroundStyle(.secondary)
+                    }
                 }
+                .width(min: 70, ideal: 120)
             }
-            .width(min: 100, ideal: 140)
-            TableColumn("Service", value: \.remotePortSort) { c in
-                HStack(spacing: 4) {
-                    Text(c.proto.rawValue).font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 4).padding(.vertical, 1)
-                        .background(protoColor(c.proto).opacity(0.15), in: .rect(cornerRadius: 3))
-                        .foregroundStyle(protoColor(c.proto))
-                    Text(serviceText(c)).lineLimit(1).monospacedDigit()
+            if columns.service {
+                TableColumn("Service", value: \.remotePortSort) { c in
+                    HStack(spacing: 4) {
+                        Text(c.proto.rawValue).font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 4).padding(.vertical, 1)
+                            .background(protoColor(c.proto).opacity(0.15), in: .rect(cornerRadius: 3))
+                            .foregroundStyle(protoColor(c.proto))
+                        Text(serviceText(c)).lineLimit(1).monospacedDigit()
+                    }
                 }
+                .width(min: 64, ideal: 120)
             }
-            .width(min: 90, ideal: 120)
-            TableColumn("State", value: \.state) { c in
-                if store.policy.isBlocked(address: c.remote.bareAddress) {
-                    Label("Blocked", systemImage: "hand.raised.fill").foregroundStyle(.red)
-                } else {
-                    Text(c.isClosed ? "Closed" : c.displayState).foregroundStyle(c.isClosed ? .tertiary : .secondary)
+            if columns.state {
+                TableColumn("State", value: \.state) { c in
+                    if store.policy.isBlocked(address: c.remote.bareAddress) {
+                        Label("Blocked", systemImage: "hand.raised.fill").foregroundStyle(.red)
+                    } else {
+                        Text(c.isClosed ? "Closed" : c.displayState).foregroundStyle(c.isClosed ? .tertiary : .secondary)
+                    }
                 }
+                .width(min: 60, ideal: 80)
             }
-            .width(min: 70, ideal: 90)
             TableColumn("↓ Rate", value: \.rateIn) { c in RateText(rate: c.rateIn, direction: .down) }
-                .width(min: 70, ideal: 90)
+                .width(min: 50, ideal: 72)
             TableColumn("↑ Rate", value: \.rateOut) { c in RateText(rate: c.rateOut, direction: .up) }
-                .width(min: 70, ideal: 90)
-            TableColumn("Total", value: \.totalBytes) { c in
-                Text(ByteFormat.bytes(c.totalBytes)).monospacedDigit().foregroundStyle(.secondary)
+                .width(min: 50, ideal: 72)
+            if columns.total {
+                TableColumn("Total", value: \.totalBytes) { c in
+                    Text(ByteFormat.bytes(c.totalBytes)).monospacedDigit().foregroundStyle(.secondary)
+                }
+                .width(min: 50, ideal: 70)
             }
-            .width(min: 60, ideal: 80)
-            TableColumn("RTT", value: \.rttSort) { c in
-                Text(c.rttMs.map { String(format: "%.0f ms", $0) } ?? "—").monospacedDigit().foregroundStyle(.secondary)
+            if columns.rtt {
+                TableColumn("RTT", value: \.rttSort) { c in
+                    Text(c.rttMs.map { String(format: "%.0f ms", $0) } ?? "—").monospacedDigit().foregroundStyle(.secondary)
+                }
+                .width(min: 40, ideal: 56)
             }
-            .width(min: 50, ideal: 64)
         }
+        // A new column set gets a fresh table: inserting a column into the live one made AppKit
+        // rescale the others past the table's width.
+        .id([columns.service, columns.location, columns.state, columns.total, columns.rtt])
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tableWidth = $0 }
         .contextMenu(forSelectionType: String.self) { ids in
             if let id = ids.first, let c = store.connection(id: id) {
                 ConnectionContextMenu(connection: c)

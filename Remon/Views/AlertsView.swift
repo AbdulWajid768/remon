@@ -126,6 +126,10 @@ struct AlertRuleEditor: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            Text(store.alerts.rules.contains { $0.id == rule.id } ? "Edit Alert Rule" : "New Alert Rule")
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20).padding(.top, 18)
             Form {
                 TextField("Name", text: $rule.name)
                 Picker("Trigger", selection: $rule.kind) {
@@ -158,7 +162,13 @@ struct AlertRuleEditor: View {
                     }
                 }
                 if rule.kind.usesDuration {
-                    Stepper("Sustained for \(rule.sustainSeconds) s", value: $rule.sustainSeconds, in: 1...600, step: 5)
+                    // A picker, like "Don't repeat for" below (a full-width stepper looked out of place).
+                    Picker("Sustained for", selection: $rule.sustainSeconds) {
+                        ForEach(Set([5, 10, 15, 30, 60, 120, 300, rule.sustainSeconds]).sorted(), id: \.self) { seconds in
+                            Text(Duration.seconds(seconds).formatted(.units(allowed: [.minutes, .seconds], width: .abbreviated)))
+                                .tag(seconds)
+                        }
+                    }
                 }
                 if rule.kind != .newApp {
                     Picker("Don't repeat for", selection: $rule.cooldownMinutes) {
