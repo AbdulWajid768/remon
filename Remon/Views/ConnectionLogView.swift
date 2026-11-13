@@ -108,25 +108,27 @@ struct ConnectionLogView: View {
                                        description: Text("Connections are logged here when they close. Open connections are in Connections."))
             }
         }
+        // A frosted panel behind the rows: with nothing behind them, AppKit renders the cells with
+        // vibrancy and the coloured rates and protocol badges wash out. Stripes on glass were too dark.
+        .scrollContentBackground(.hidden)
+        .alternatingRowBackgrounds(.disabled)
+        .background(.thinMaterial)
         .safeAreaInset(edge: .top, spacing: 0) {
-            HStack {
+            PageBar {
                 Picker("Range", selection: $range) {
                     ForEach(LogRange.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented).labelsHidden().fixedSize()
-                Spacer()
+            } trailing: {
                 Text("\(rows.count) connections · \(ByteFormat.bytes(rows.reduce(0) { $0 + $1.totalBytes }))")
                     .foregroundStyle(.secondary)
                 Button {
                     exportCSV(rows)
                 } label: {
-                    Label("Export", systemImage: "square.and.arrow.up")
+                    Label("Export Log", systemImage: "square.and.arrow.up")
                 }
                 .disabled(rows.isEmpty)
             }
-            .font(.callout)
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            .background(.bar)
         }
         .task(id: LoadKey(range: range, search: store.searchText, revision: store.logRevision)) {
             try? await Task.sleep(for: .milliseconds(150)) // debounce typing

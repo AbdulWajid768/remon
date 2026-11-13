@@ -47,6 +47,18 @@ final class NetworkEnvironment {
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored var onPublicIPChange: ((String?, String) -> Void)?
 
+    /// `-redactIdentity YES` swaps this Mac's own public IP, network owner, place and Wi-Fi name for
+    /// placeholders everywhere they are shown. Only for the screenshots in the README — the lookups
+    /// still run, so the UI behaves exactly as it does normally.
+    @ObservationIgnored private let redactIdentity = UserDefaults.standard.bool(forKey: "redactIdentity")
+
+    /// What a redacted public IP and its geography look like: documentation addresses from RFC 5737.
+    private static let placeholderIP = "203.0.113.42"
+    private static let placeholderGeo = GeoInfo(scope: .publicInternet, countryCode: "US", country: "United States",
+                                                region: "California", city: "San Francisco",
+                                                org: "EXAMPLE INTERNET", asn: 64496,
+                                                latitude: 37.7749, longitude: -122.4194)
+
     func start(lookupsEnabled: @escaping @MainActor () -> Bool) {
         guard task == nil else { return }
         task = Task { [weak self] in
@@ -65,8 +77,8 @@ final class NetworkEnvironment {
     func refreshPublicIP() async {
         guard let result = await locator.lookupSelf() else { return }
         let previous = publicIP
-        publicIP = result.ip
-        publicGeo = result.info
+        publicIP = redactIdentity ? Self.placeholderIP : result.ip
+        publicGeo = redactIdentity ? Self.placeholderGeo : result.info
         lastPublicIPCheck = Date()
         if let previous, previous != result.ip { onPublicIPChange?(previous, result.ip) }
     }
@@ -90,7 +102,8 @@ final class NetworkEnvironment {
         case .band6GHz: "6 GHz"
         default: nil
         }
-        wifi = WiFiDetails(ssid: interface.ssid(), rssi: interface.rssiValue(), noise: interface.noiseMeasurement(),
+        wifi = WiFiDetails(ssid: redactIdentity ? "Example Wi-Fi" : interface.ssid(),
+                           rssi: interface.rssiValue(), noise: interface.noiseMeasurement(),
                            transmitRate: interface.transmitRate(), channel: channel?.channelNumber, band: band,
                            security: Self.securityName(interface.security()))
     }

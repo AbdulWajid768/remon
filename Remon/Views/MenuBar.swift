@@ -220,6 +220,7 @@ struct MenuBarPanel: View {
                 .keyboardShortcut("q")
             }
             .buttonStyle(.borderless)
+            .tint(.primary)
         }
         .padding(16)
         .frame(width: 340)
@@ -257,7 +258,7 @@ struct MenuBarPanel: View {
         HStack(spacing: 8) {
             Image(systemName: "waveform.path.ecg")
                 .font(.headline)
-                .foregroundStyle(LinearGradient(colors: [.blue, .purple], startPoint: .leading, endPoint: .trailing))
+                .foregroundStyle(LinearGradient(colors: [Accent.base, .teal], startPoint: .leading, endPoint: .trailing))
                 .accessibilityHidden(true)
             Text("Remon").font(.headline)
             Spacer()

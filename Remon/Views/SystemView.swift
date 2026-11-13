@@ -8,42 +8,47 @@ struct SystemView: View {
     var body: some View {
         ScrollView {
             if let s = system.latest {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionHeading("At a Glance", subtitle: "Load, memory, temperatures and power right now.")
                     tiles(s)
-                    HStack(alignment: .top, spacing: 16) {
-                        Card("CPU & GPU Load", symbol: "cpu", accessory: AnyView(ChartLegend(items: [("CPU", .blue), ("GPU", .purple)]))) {
-                            loadChart.frame(height: 170)
+                    SectionHeading("Processor", subtitle: "CPU and GPU load over the last few minutes, and every core.")
+                    HStack(alignment: .top, spacing: 12) {
+                        Card("CPU & GPU Load", symbol: "cpu", accessory: AnyView(ChartLegend(items: [("CPU", .blue), ("GPU", .purple)])),
+                             summary: AnyView(CardSummary(["CPU \(percent(s.cpuTotal))", "GPU \(s.gpuUtilization.map(percent) ?? "—")"]))) {
+                            loadChart.frame(height: 160)
                         }
-                        Card("Temperatures", symbol: "thermometer.medium", accessory: AnyView(ChartLegend(items: [("CPU", .blue), ("GPU", .purple)]))) {
-                            temperatureChart.frame(height: 170)
+                        Card("Temperatures", symbol: "thermometer.medium", accessory: AnyView(ChartLegend(items: [("CPU", .blue), ("GPU", .purple)])),
+                             summary: AnyView(CardSummary(["CPU \(s.temperature(.cpu).map(celsius) ?? "—")", "GPU \(s.temperature(.gpu).map(celsius) ?? "—")"]))) {
+                            temperatureChart.frame(height: 160)
                         }
                     }
                     CoresCard(snapshot: s)
-                    HStack(alignment: .top, spacing: 16) {
+                    SectionHeading("Memory & Storage")
+                    HStack(alignment: .top, spacing: 12) {
                         MemoryCard(memory: s.memory)
-                        VStack(spacing: 16) {
-                            if !s.fans.isEmpty || s.systemPowerWatts != nil { FansPowerCard(snapshot: s) }
+                        VStack(spacing: 12) {
                             DiskCard(snapshot: s)
-                        }
-                    }
-                    HStack(alignment: .top, spacing: 16) {
-                        SensorsCard(sensors: s.sensors)
-                        VStack(spacing: 16) {
-                            if let battery = s.battery { BatteryCard(battery: battery) }
                             SystemInfoCard(snapshot: s)
                         }
                     }
+                    SectionHeading("Power & Thermals")
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(spacing: 12) {
+                            if let battery = s.battery { BatteryCard(battery: battery) }
+                            if !s.fans.isEmpty || s.systemPowerWatts != nil { FansPowerCard(snapshot: s) }
+                        }
+                        SensorsCard(sensors: s.sensors)
+                    }
                 }
-                .padding(20)
+                .padding(16)
             } else {
                 ProgressView("Reading sensors…").frame(maxWidth: .infinity, minHeight: 300)
             }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private func tiles(_ s: SystemSnapshot) -> some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 3), spacing: 14) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 12) {
             StatTile(title: "CPU", value: percent(s.cpuTotal),
                      detail: "User \(percent(s.cpuUser)) · System \(percent(s.cpuSystem))", symbol: "cpu", tint: .blue)
             StatTile(title: "GPU", value: s.gpuUtilization.map(percent) ?? "—",
@@ -132,9 +137,12 @@ private struct CoresCard: View {
     var body: some View {
         let cores = snapshot.perCore
         let perf = snapshot.performanceCores
+        let busiest = cores.max() ?? 0
         Card("\(cores.count) Cores", symbol: "square.grid.3x3.fill",
              accessory: AnyView(Text(perf > 0 && snapshot.efficiencyCores > 0 ? "\(perf) performance · \(snapshot.efficiencyCores) efficiency" : "")
-                .font(.caption).foregroundStyle(.secondary))) {
+                .font(.caption).foregroundStyle(.secondary)),
+             summary: AnyView(CardSummary(["Busiest core \(percent(busiest))", "average \(percent(cores.reduce(0, +) / Double(max(cores.count, 1))))"])),
+             key: "cores") {
             HStack(alignment: .bottom, spacing: 6) {
                 ForEach(Array(cores.enumerated()), id: \.offset) { index, load in
                     // macOS numbers efficiency cores first on Apple silicon.
@@ -165,7 +173,8 @@ private struct MemoryCard: View {
     var body: some View {
         let parts: [(String, UInt64, Color)] = [("App", memory.app, .blue), ("Wired", memory.wired, .orange),
                                                  ("Compressed", memory.compressed, .purple), ("Cached", memory.cached, .gray)]
-        Card("Memory", symbol: "memorychip") {
+        Card("Memory", symbol: "memorychip",
+             summary: AnyView(CardSummary(["\(ByteFormat.bytes(memory.used)) of \(ByteFormat.bytes(memory.total)) used", "\(memory.pressure.rawValue) pressure"]))) {
             VStack(alignment: .leading, spacing: 10) {
                 GeometryReader { geo in
                     HStack(spacing: 1) {
@@ -210,7 +219,9 @@ private struct FansPowerCard: View {
     var snapshot: SystemSnapshot
 
     var body: some View {
-        Card("Fans & Power", symbol: "fan") {
+        Card("Fans & Power", symbol: "fan",
+             summary: AnyView(CardSummary([snapshot.systemPowerWatts.map { String(format: "%.1f W", $0) } ?? "",
+                                           snapshot.fans.isEmpty ? "" : snapshot.fans.map { $0.rpm < 1 ? "fan off" : "\(Int($0.rpm)) rpm" }.joined(separator: ", ")]))) {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(snapshot.fans) { fan in
                     HStack {
@@ -239,7 +250,9 @@ private struct DiskCard: View {
     var snapshot: SystemSnapshot
 
     var body: some View {
-        Card("Disk", symbol: "internaldrive") {
+        Card("Disk", symbol: "internaldrive",
+             summary: AnyView(CardSummary([snapshot.diskFree.map { "\(ByteFormat.bytes($0)) available" } ?? "",
+                                           "↓ \(ByteFormat.rate(snapshot.diskReadRate))  ↑ \(ByteFormat.rate(snapshot.diskWriteRate))"]))) {
             VStack(alignment: .leading, spacing: 8) {
                 if let free = snapshot.diskFree, let total = snapshot.diskTotal, total > 0 {
                     ProgressView(value: Double(total - min(free, total)), total: Double(total)) {
@@ -261,7 +274,11 @@ private struct SensorsCard: View {
     var sensors: [TemperatureSensor]
 
     var body: some View {
-        Card("Sensors (\(sensors.count))", symbol: "sensor") {
+        // Every readable sensor; folded by default, the tiles above carry the headline numbers.
+        let hottest = sensors.max { $0.celsius < $1.celsius }
+        Card("Sensors (\(sensors.count))", symbol: "sensor",
+             summary: AnyView(CardSummary(hottest.map { ["Hottest \($0.name) \(celsius($0.celsius))"] } ?? ["No readable sensors"])),
+             key: "sensors", collapsed: true) {
             if sensors.isEmpty {
                 Text("No temperature sensors are readable on this Mac.").foregroundStyle(.secondary)
             } else {
@@ -302,7 +319,9 @@ private struct BatteryCard: View {
     var battery: BatteryReading
 
     var body: some View {
-        Card("Battery", symbol: battery.isCharging ? "battery.100.bolt" : "battery.75") {
+        Card("Battery", symbol: battery.isCharging ? "battery.100.bolt" : "battery.75",
+             summary: AnyView(CardSummary(["\(Int(battery.percent * 100))%", battery.isCharging ? "Charging" : (battery.onAC ? "On power adapter" : "On battery"),
+                                           battery.maximumCapacity.map { "health \(Int(($0 * 100).rounded()))%" } ?? ""]))) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("\(Int(battery.percent * 100))%").font(.title3.weight(.semibold).monospacedDigit())
@@ -338,7 +357,8 @@ private struct SystemInfoCard: View {
     }()
 
     var body: some View {
-        Card("This Mac", symbol: "laptopcomputer") {
+        Card("This Mac", symbol: "laptopcomputer",
+             summary: AnyView(CardSummary([Self.chip, "macOS \(ProcessInfo.processInfo.operatingSystemVersionString)"])), collapsed: true) {
             VStack(spacing: 6) {
                 DetailRow(label: "Chip", value: Self.chip)
                 DetailRow(label: "macOS", value: ProcessInfo.processInfo.operatingSystemVersionString)

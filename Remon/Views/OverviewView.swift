@@ -6,31 +6,32 @@ struct OverviewView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
                 if case .failed(let message) = store.sourceStatus {
                     SourceFailureBanner(message: message)
                 }
+                SectionHeading("At a Glance", subtitle: "Current rates and what this Mac has moved so far.")
                 tiles
                 if preferences.dataPlanEnabled { DataPlanCard() }
-                Card("Live Throughput", symbol: "waveform.path.ecg", accessory: AnyView(legend)) {
+                SectionHeading("Live Traffic", subtitle: "Throughput over the last five minutes, and who is using it.")
+                Card("Live Throughput", symbol: "waveform.path.ecg", accessory: AnyView(legend), summary: AnyView(throughputSummary)) {
                     ThroughputChart(points: store.throughput)
-                        .frame(height: 220)
+                        .frame(height: 200)
                 }
-                HStack(alignment: .top, spacing: 16) {
+                HStack(alignment: .top, spacing: 12) {
                     TopAppsCard()
-                    VStack(spacing: 16) {
+                    VStack(spacing: 12) {
                         NetworkCard()
                         DestinationsCard()
                     }
                 }
             }
-            .padding(20)
+            .padding(16)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var tiles: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 3), spacing: 14) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 12) {
             StatTile(title: "Download", value: preferences.rate(store.currentIn),
                      detail: "Peak \(preferences.rate(store.peakIn))", symbol: "arrow.down.circle.fill", tint: Theme.download)
             StatTile(title: "Upload", value: preferences.rate(store.currentOut),
@@ -51,6 +52,15 @@ struct OverviewView: View {
     private var legend: some View {
         ChartLegend(items: [("Download", Theme.download), ("Upload", Theme.upload)], note: "Last 5 min")
     }
+
+    private var throughputSummary: some View {
+        HStack(spacing: 14) {
+            Label(preferences.rate(store.currentIn), systemImage: "arrow.down").foregroundStyle(Theme.download)
+            Label(preferences.rate(store.currentOut), systemImage: "arrow.up").foregroundStyle(Theme.upload)
+            Text("Peak ↓ \(preferences.rate(store.peakIn))  ↑ \(preferences.rate(store.peakOut))").foregroundStyle(.secondary)
+        }
+        .font(.callout.monospacedDigit())
+    }
 }
 
 struct SourceFailureBanner: View {
@@ -66,7 +76,8 @@ struct SourceFailureBanner: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.yellow.opacity(0.12), in: .rect(cornerRadius: 10))
+        .background(.yellow.opacity(0.14), in: .rect(cornerRadius: 12, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.yellow.opacity(0.3), lineWidth: 0.5) }
     }
 }
 
@@ -75,8 +86,9 @@ struct TopAppsCard: View {
     @Environment(Preferences.self) private var preferences
 
     var body: some View {
-        Card("Top Apps Right Now", symbol: "flame") {
-            let top = Array(store.apps.prefix(8))
+        let top = Array(store.apps.prefix(8))
+        let summary = top.prefix(3).map { "\($0.name) \(preferences.rate($0.totalRate))" }
+        Card("Top Apps Right Now", symbol: "flame", summary: AnyView(CardSummary(summary.isEmpty ? ["No activity"] : summary))) {
             if top.isEmpty {
                 Text(store.sourceStatus == .running ? "No network activity yet." : "Waiting for data…")
                     .foregroundStyle(.secondary)
@@ -130,7 +142,9 @@ struct NetworkCard: View {
 
     var body: some View {
         let snapshot = store.path.snapshot
-        Card("Network", symbol: snapshot.primaryKind?.symbol ?? "network") {
+        let summary = [snapshot.isConnected ? "Connected" : "Offline", store.environment.wifi?.ssid ?? "",
+                       store.environment.publicIP ?? "", store.environment.isVPNActive ? "VPN" : ""]
+        Card("Network", symbol: snapshot.primaryKind?.symbol ?? "network", summary: AnyView(CardSummary(summary))) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
                     StatusDot(color: snapshot.isConnected ? .green : .red)
@@ -209,8 +223,11 @@ struct DestinationsCard: View {
     }
 
     var body: some View {
-        Card("Where Your Traffic Goes", symbol: "globe.europe.africa") {
-            let buckets = computeBuckets()
+        // Folded by default: the Map section tells the same story in full.
+        let buckets = computeBuckets()
+        Card("Where Your Traffic Goes", symbol: "globe.europe.africa",
+             summary: AnyView(CardSummary(buckets.isEmpty ? ["Resolving destinations…"] : buckets.prefix(4).map { "\($0.flag) \($0.name) \($0.count)" })),
+             collapsed: true) {
             if buckets.isEmpty {
                 Text("Resolving destinations…").foregroundStyle(.secondary)
             } else {
@@ -268,7 +285,9 @@ struct DataPlanCard: View {
         let cycle = store.billingCycle
         let projected = cycle.projectedUsage(used: store.cycleUsage, at: Date())
         let tint: Color = fraction >= 1 ? .red : (fraction >= 0.8 ? .orange : .green)
-        Card("Data Plan", symbol: "chart.pie") {
+        Card("Data Plan", symbol: "chart.pie",
+             summary: AnyView(CardSummary(["\(ByteFormat.bytes(store.cycleUsage)) of \(ByteFormat.bytes(limit)) (\(Int((fraction * 100).rounded()))%)",
+                                           "resets in \(daysLeft(cycle)) days"]))) {
             HStack(spacing: 20) {
                 ZStack {
                     UsageRing(fraction: fraction, tint: tint, lineWidth: 9)

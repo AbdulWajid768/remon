@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Sparkle. Xcode merges the keys it generates (name, version, category…) into this file. -->
+	<key>SUFeedURL</key>
+	<string>https://abdulwajid768.github.io/remon/appcast.xml</string>
+	<!-- EdDSA public key for release signatures; set by scripts/sparkle-keys.sh. An empty value
+	     keeps the updater switched off, which is what local ad-hoc builds want. -->
+	<key>SUPublicEDKey</key>
+	<string>$(SPARKLE_PUBLIC_ED_KEY)</string>
+	<!-- Check on a schedule without asking on first launch; Settings → General can turn it off. -->
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<!-- Never send system profile information with the check. -->
+	<key>SUSendProfileInfo</key>
+	<false/>
+</dict>
+</plist>

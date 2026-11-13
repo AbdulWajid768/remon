@@ -24,7 +24,8 @@ struct OnboardingView: View {
                 HStack(spacing: 6) {
                     ForEach(0..<3) { i in
                         Capsule()
-                            .fill(i == page ? Color.accentColor : Color.secondary.opacity(0.3))
+                            // Mint, like the Continue button it tracks.
+                            .fill(i == page ? Accent.base : Color.secondary.opacity(0.3))
                             .frame(width: i == page ? 18 : 7, height: 7)
                     }
                 }
@@ -41,7 +42,8 @@ struct OnboardingView: View {
                     }
                 }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.mint)
+                .padding(.leading, 4)
             }
             .padding(16)
         }
@@ -54,7 +56,7 @@ struct OnboardingView: View {
         VStack(spacing: 18) {
             Image(systemName: "waveform.path.ecg.rectangle.fill")
                 .font(.system(size: 64, weight: .regular))
-                .foregroundStyle(LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .foregroundStyle(LinearGradient(colors: [Accent.base, .teal], startPoint: .topLeading, endPoint: .bottomTrailing))
                 .symbolEffect(.pulse, options: .repeating)
             Text("Welcome to Remon").font(.largeTitle.weight(.bold))
             Text("See every app talking to the network — how much, to whom, and where in the world — right from your menu bar.")
@@ -62,7 +64,7 @@ struct OnboardingView: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 440)
             VStack(alignment: .leading, spacing: 14) {
-                feature("chart.xyaxis.line", .blue, "Live per-app bandwidth", "Download and upload for every process, updated every second.")
+                feature("chart.xyaxis.line", Accent.base, "Live per-app bandwidth", "Download and upload for every process, updated every second.")
                 feature("globe.americas.fill", .green, "Every connection, explained", "Hostnames, countries, owners and a label for what each destination is.")
                 feature("bell.badge.fill", .orange, "Calm, useful alerts", "Know when something unusual happens — without a prompt for every packet.")
             }

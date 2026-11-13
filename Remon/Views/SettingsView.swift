@@ -73,9 +73,54 @@ private struct GeneralSettings: View {
                 }
                 .pickerStyle(.radioGroup)
             }
+            UpdateSettings()
         }
         .formStyle(.grouped)
         .onAppear { launchAtLogin = preferences.launchAtLogin }
+    }
+}
+
+/// Sparkle-backed updates. Hidden in builds with no feed or public key (local ad-hoc builds),
+/// where the updater never starts.
+private struct UpdateSettings: View {
+    @Environment(UpdateController.self) private var updater
+    @State private var automaticallyChecks = false
+    @State private var automaticallyDownloads = false
+
+    var body: some View {
+        if updater.isConfigured {
+            Section {
+                Toggle(isOn: $automaticallyChecks) {
+                    Text("Check for updates automatically")
+                    if let host = updater.feedHost {
+                        Text("Once a day, Remon asks \(host) whether a newer version exists.")
+                    }
+                }
+                .onChange(of: automaticallyChecks) { _, enabled in updater.automaticallyChecks = enabled }
+                Toggle("Download updates in the background", isOn: $automaticallyDownloads)
+                    .onChange(of: automaticallyDownloads) { _, enabled in updater.automaticallyDownloads = enabled }
+                    .disabled(!automaticallyChecks)
+                LabeledContent("Version", value: UpdateController.versionDescription)
+                HStack {
+                    if let last = updater.lastCheck {
+                        Text("Last checked \(last.formatted(.relative(presentation: .named)))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Check Now…") { updater.checkForUpdates() }
+                        .disabled(!updater.canCheck)
+                }
+            } header: {
+                Text("Updates")
+            } footer: {
+                Text("Updates are signed and are only installed when the signature matches Remon's release key.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .onAppear {
+                automaticallyChecks = updater.automaticallyChecks
+                automaticallyDownloads = updater.automaticallyDownloads
+            }
+        }
     }
 }
 
@@ -137,7 +182,7 @@ private struct PrivacySettings: View {
                     Text("Sends public IP addresses to ipwho.is over HTTPS. Local addresses never leave your Mac. Results are cached for 30 days.")
                 }
             } footer: {
-                Text("Remon never inspects packet contents. All history stays in ~/Library/Application Support/Remon.")
+                Text("Remon never inspects packet contents. All history stays in ~/Library/Application Support/Remon. The only other request Remon makes on its own is the daily update check, which you can turn off in General.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

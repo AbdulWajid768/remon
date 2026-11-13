@@ -42,9 +42,15 @@ struct RulesView: View {
             }
         }
         .formStyle(.grouped)
-        .toolbar {
-            ToolbarItem {
+        .scrollContentBackground(.hidden)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            PageBar {
+                Text(policy.rules.isEmpty ? "Nothing blocked yet"
+                     : "\(policy.enabledDomains.count) domains · \(policy.enabledAddresses.count) servers blocked")
+                    .foregroundStyle(.secondary)
+            } trailing: {
                 Button { showingAdd = true } label: { Label("Add Block Rule", systemImage: "plus") }
+                    .buttonStyle(.mint)
                     .help("Block a domain or server address")
             }
         }
@@ -89,6 +95,7 @@ struct RulesView: View {
                 Spacer()
                 if policy.needsApply || policy.lastError != nil {
                     Button("Apply Now") { Task { await policy.apply() } }
+                        .buttonStyle(.mintSoft)
                         .disabled(policy.isApplying)
                 }
                 if !policy.rules.isEmpty {
@@ -176,6 +183,7 @@ struct AddBlockRuleSheet: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty)
+                .buttonStyle(.mint)
             }
             .padding(16)
         }

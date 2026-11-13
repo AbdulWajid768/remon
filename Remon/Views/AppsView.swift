@@ -84,18 +84,20 @@ struct AppsView: View {
                 }
             }
         }
+        // A frosted panel behind the rows: with nothing behind them, AppKit renders the cells with
+        // vibrancy and the coloured rates and protocol badges wash out. Stripes on glass were too dark.
+        .scrollContentBackground(.hidden)
+        .alternatingRowBackgrounds(.disabled)
+        .background(.thinMaterial)
         .safeAreaInset(edge: .top, spacing: 0) {
-            HStack {
+            PageBar {
                 Toggle("Only apps with open connections", isOn: $onlyActive)
                     .toggleStyle(.checkbox)
                 Toggle("Only unsigned or ad-hoc", isOn: $onlyUnsigned)
                     .toggleStyle(.checkbox)
-                Spacer()
+            } trailing: {
                 Text("\(rows.count) apps").foregroundStyle(.secondary)
             }
-            .font(.callout)
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            .background(.bar)
         }
     }
 }

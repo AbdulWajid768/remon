@@ -7,6 +7,8 @@ struct RemonApp: App {
     @State private var store = MonitorStore.shared
     @State private var preferences = Preferences.shared
     @State private var system = SystemMonitor.shared
+    // Created with the app so Sparkle's scheduled background check starts on launch.
+    @State private var updater = UpdateController.shared
 
     var body: some Scene {
         @Bindable var preferences = preferences
@@ -16,6 +18,7 @@ struct RemonApp: App {
                 .environment(store)
                 .environment(preferences)
                 .environment(system)
+                .environment(updater)
                 .modifier(WindowActionInstaller(store: store))
                 // Sidebar (~210) + detail column (~560 effective minimum, see MainView) + inspector
                 // (~320) don't fit in 900 pt; with less room AppKit lays the split view out wider than
@@ -28,13 +31,14 @@ struct RemonApp: App {
         // Menu-bar-only users (no Dock icon) who've finished onboarding start without the window.
         .restorationBehavior(.disabled)
         .defaultLaunchBehavior(preferences.showDockIcon || !preferences.hasCompletedOnboarding ? .presented : .suppressed)
-        .commands { RemonCommands(store: store) }
+        .commands { RemonCommands(store: store, updater: updater) }
 
         MenuBarExtra(isInserted: $preferences.showMenuBarItem) {
             MenuBarPanel()
                 .environment(store)
                 .environment(preferences)
                 .environment(system)
+                .environment(updater)
         } label: {
             MenuBarLabel()
                 .environment(store)
@@ -75,6 +79,7 @@ struct RemonApp: App {
                 .environment(store)
                 .environment(preferences)
                 .environment(system)
+                .environment(updater)
         }
     }
 }
@@ -173,9 +178,16 @@ struct WindowActionInstaller: ViewModifier {
 
 struct RemonCommands: Commands {
     var store: MonitorStore
+    var updater: UpdateController
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            if updater.isConfigured {
+                Button("Check for Updates…") { updater.checkForUpdates() }
+                    .disabled(!updater.canCheck)
+            }
+        }
         CommandGroup(replacing: .newItem) {
             Button("Show Main Window") {
                 openWindow(id: "main")

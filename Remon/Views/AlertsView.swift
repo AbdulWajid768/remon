@@ -21,8 +21,10 @@ struct AlertsView: View {
                             Button("Open Settings") {
                                 NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!)
                             }
+                            .buttonStyle(.mintSoft)
                         } else {
                             Button("Allow…") { Task { await alerts.requestAuthorization() } }
+                                .buttonStyle(.mintSoft)
                         }
                     }
                 }
@@ -34,15 +36,10 @@ struct AlertsView: View {
                 }
                 .onDelete { alerts.rules.remove(atOffsets: $0) }
             } header: {
-                HStack {
-                    Text("Rules")
-                    Spacer()
-                    Button {
-                        editing = AlertRule(name: "New Rule", kind: .totalRate)
-                    } label: {
-                        Label("Add Rule", systemImage: "plus")
-                    }
-                    .buttonStyle(.borderless)
+                Text("Rules")
+            } footer: {
+                if alerts.rules.isEmpty {
+                    Text("No rules yet. Add one to be told when an app, the whole Mac or your data plan passes a limit.")
                 }
             }
 
@@ -69,12 +66,27 @@ struct AlertsView: View {
                     Text("Recent Alerts")
                     Spacer()
                     if !alerts.events.isEmpty {
-                        Button("Clear") { alerts.clearEvents() }.buttonStyle(.borderless)
+                        Button("Clear") { alerts.clearEvents() }.buttonStyle(.borderless).tint(.primary)
                     }
                 }
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            PageBar {
+                Text(alerts.rules.isEmpty ? "No rules" : "\(alerts.rules.count) rules · \(alerts.rules.filter(\.isEnabled).count) on")
+                    .foregroundStyle(.secondary)
+            } trailing: {
+                Button {
+                    editing = AlertRule(name: "New Rule", kind: .totalRate)
+                } label: {
+                    Label("Add Rule", systemImage: "plus")
+                }
+                .buttonStyle(.mint)
+                .help("Add an alert rule")
+            }
+        }
         .sheet(item: $editing) { rule in
             AlertRuleEditor(rule: rule) { saved in
                 if let index = alerts.rules.firstIndex(where: { $0.id == saved.id }) {
@@ -103,7 +115,7 @@ private struct RuleRow: View {
                 Text(rule.summary).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Edit…", action: onEdit).buttonStyle(.borderless)
+            Button("Edit…", action: onEdit).buttonStyle(.borderless).tint(.primary)
             AccessibleSwitch(label: "\(rule.name) enabled", isOn: Binding(
                 get: { rule.isEnabled },
                 set: { newValue in
@@ -192,6 +204,7 @@ struct AlertRuleEditor: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(rule.name.trimmingCharacters(in: .whitespaces).isEmpty)
+                .buttonStyle(.mint)
             }
             .padding(16)
         }

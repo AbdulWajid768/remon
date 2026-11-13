@@ -66,13 +66,13 @@ struct QuickOpenView: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.title).lineLimit(1)
-                Text(item.subtitle).font(.caption).foregroundStyle(selected ? Color.white.opacity(0.8) : .secondary).lineLimit(1)
+                Text(item.subtitle).font(.caption).foregroundStyle(selected ? Accent.label.opacity(0.75) : .secondary).lineLimit(1)
             }
             Spacer()
             if selected { Image(systemName: "return").font(.caption) }
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
-        .foregroundStyle(selected ? Color.white : .primary)
+        .foregroundStyle(selected ? Accent.label : .primary)
         .background(selected ? Color.accentColor : .clear, in: .rect(cornerRadius: 7))
         .contentShape(.rect)
     }

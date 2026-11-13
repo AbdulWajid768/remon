@@ -17,6 +17,14 @@ enum HistoryRange: String, CaseIterable, Identifiable {
     }
 
     var unit: Calendar.Component { self == .today ? .hour : .day }
+
+    var heading: String {
+        switch self {
+        case .today: "Today"
+        case .week: "Last 7 Days"
+        case .month: "Last 30 Days"
+        }
+    }
 }
 
 struct HistoryView: View {
@@ -29,20 +37,7 @@ struct HistoryView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Picker("Range", selection: $range) {
-                        ForEach(HistoryRange.allCases) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                    Spacer()
-                    if let write = store.lastHistoryWrite {
-                        Text("Saved \(write.formatted(.relative(presentation: .named)))").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-
+            VStack(alignment: .leading, spacing: 12) {
                 if store.history == nil {
                     SourceFailureBanner(message: store.historyError ?? "History database unavailable.")
                 }
@@ -50,7 +45,8 @@ struct HistoryView: View {
                 let totalIn = points.reduce(0) { $0 + $1.bytesIn }
                 let totalOut = points.reduce(0) { $0 + $1.bytesOut }
                 let peak = points.max { $0.total < $1.total }
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 3), spacing: 14) {
+                SectionHeading(range.heading, subtitle: "Totals for the range, then usage over time and the apps behind it.")
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 12) {
                     StatTile(title: "Downloaded", value: ByteFormat.bytes(totalIn), symbol: "arrow.down.circle.fill", tint: Theme.download)
                     StatTile(title: "Uploaded", value: ByteFormat.bytes(totalOut), symbol: "arrow.up.circle.fill", tint: Theme.upload)
                     StatTile(title: range == .today ? "Busiest Hour" : "Busiest Day",
@@ -60,19 +56,22 @@ struct HistoryView: View {
                 }
 
                 Card(range == .today ? "Usage by Hour" : "Usage by Day", symbol: "chart.bar.xaxis",
-                     accessory: AnyView(ChartLegend(items: [("Download", Theme.download), ("Upload", Theme.upload)]))) {
+                     accessory: AnyView(ChartLegend(items: [("Download", Theme.download), ("Upload", Theme.upload)])),
+                     summary: AnyView(CardSummary(["↓ \(ByteFormat.bytes(totalIn))", "↑ \(ByteFormat.bytes(totalOut))",
+                                                   peak.map { "peak \(label(for: $0.start))" } ?? ""])), key: "usage") {
                     if points.isEmpty && !loading {
                         ContentUnavailableView("No History Yet", systemImage: "chart.bar",
                                                description: Text("Remon records usage every minute while it runs."))
                             .frame(height: 220)
                     } else {
-                        usageChart.frame(height: 240)
+                        usageChart.frame(height: 220)
                     }
                 }
 
-                Card("Top Apps", symbol: "trophy") {
-                    let query = SearchQuery(store.searchText)
-                    let apps = topApps.filter { query.isEmpty || $0.name.localizedStandardContains(store.searchText) }
+                let query = SearchQuery(store.searchText)
+                let apps = topApps.filter { query.isEmpty || $0.name.localizedStandardContains(store.searchText) }
+                Card("Top Apps", symbol: "trophy",
+                     summary: AnyView(CardSummary(apps.prefix(3).map { "\($0.name) \(ByteFormat.bytes($0.total))" })), key: "historytopapps") {
                     if apps.isEmpty {
                         Text(loading ? "Loading…" : "No app usage recorded for this range.").foregroundStyle(.secondary)
                     } else {
@@ -80,9 +79,22 @@ struct HistoryView: View {
                     }
                 }
             }
-            .padding(20)
+            .padding(16)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .safeAreaInset(edge: .top, spacing: 0) {
+            PageBar {
+                Picker("Range", selection: $range) {
+                    ForEach(HistoryRange.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            } trailing: {
+                if let write = store.lastHistoryWrite {
+                    Text("Saved \(write.formatted(.relative(presentation: .named)))").foregroundStyle(.secondary)
+                }
+            }
+        }
         .task(id: range) { await load() }
         .task {
             // Refresh periodically so "Today" fills in while the window is open.

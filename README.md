@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/assets/icon-256.png" alt="Remon" width="128" height="128"></p>
+
 # Remon
 
 A native macOS network monitor written in Swift and SwiftUI. It shows live per-app bandwidth, every open connection with its hostname, country and network owner, a world map of destinations, per-minute usage history, a searchable connection log, speed tests, data-plan tracking, alerts, and a live graph in the menu bar. It also has an iStat-style **System** view (CPU per core, GPU, memory, temperatures, fans, power, battery and disk) and **real blocking** of domains and servers. It needs no system extension, kernel extension or third-party package. Blocking asks for your administrator password through the standard macOS prompt.
@@ -10,11 +12,16 @@ A native macOS network monitor written in Swift and SwiftUI. It shows live per-a
 | ![History](docs/screenshots/history.png) | ![Quick Open](docs/screenshots/quick-open.png) |
 | ![Menu bar panel](docs/screenshots/menu-bar-panel.png) | ![Settings](docs/screenshots/settings.png) |
 | ![System](docs/screenshots/system.png) | ![Map (globe)](docs/screenshots/map.png) |
-| ![Rules / blocking](docs/screenshots/rules.png) | |
+| ![Speed Test](docs/screenshots/speed-test.png) | ![Connection log](docs/screenshots/log.png) |
+| ![Rules / blocking](docs/screenshots/rules.png) | ![Alerts](docs/screenshots/alerts.png) |
 
-All screenshots were captured from the running app on this Mac with real traffic. Nothing in them is mock data.
+All screenshots were captured from the running app on this Mac with real traffic. Nothing in them is mock
+data. The one thing that is not real is this Mac's own identity: the screenshot runs pass `-redactIdentity
+YES`, which swaps the public IP, network owner, place and Wi-Fi name for the documentation placeholders you
+see (`203.0.113.42`, `EXAMPLE INTERNET`, San Francisco, `Example Wi-Fi`). Everything else — processes,
+destinations, rates, temperatures — is what the app measured at the moment of capture.
 
-**Documents:** [docs/RESEARCH.md](docs/RESEARCH.md) is the competitive research (Little Snitch, LuLu, Radio Silence, TripMode, iStat Menus and others). [docs/SPEC.md](docs/SPEC.md) is the feature spec, split into Core and Premium polish.
+**Documents:** [docs/RESEARCH.md](docs/RESEARCH.md) is the competitive research (Little Snitch, LuLu, Radio Silence, TripMode, iStat Menus and others). [docs/SPEC.md](docs/SPEC.md) is the feature spec, split into Core and Premium polish. [docs/RELEASING.md](docs/RELEASING.md) is how a signed, notarized release is cut and how the built-in updater reaches users.
 
 ---
 
@@ -45,12 +52,46 @@ The app is ad-hoc signed ("Sign to Run Locally") with Hardened Runtime, and the 
 |---|---|
 | `-initialSection connections` | Open on a section: overview, system, apps, connections, map, history, log, speed test, alerts or rules |
 | `-skipOnboarding YES` | Don't show the welcome sheet |
+| `-showOnboarding YES` | Force the welcome sheet back up without clearing the preference |
 | `-selectTop YES` | Auto-select the top app/connection so the inspector is populated |
 | `-quickOpen YES` / `-openSettings YES` / `-previewMenuPanel YES` | Open Quick Open, Settings, or the menu bar panel in a window |
+| `-redactIdentity YES` | Replace this Mac's public IP, network owner, place and Wi-Fi name with documentation placeholders |
+| `-appearance Light` | Override the appearance for one launch |
 
-`scripts/screenshot.sh <section> <out.png> [wait] [window-title] [args…]` uses these to regenerate the screenshots. `scripts/make-icon.swift` renders the app icon.
+Any `UserDefaults` key can be set this way, so `-geoLookups NO` and friends work too. All of these are
+read once at launch and never written back, so a demo run leaves your real preferences alone.
+
+| Script | What it does |
+|---|---|
+| `scripts/screenshots.sh [name…]` | Regenerates every screenshot in `docs/screenshots` (no names → all of them) |
+| `scripts/screenshot.sh <section> <out.png> [wait] [window-title] [args…]` | One capture: launches the app on a section and grabs a window |
+| `scripts/focus.swift Remon` | Makes the window key and parks the cursor, so a capture isn't greyed out or showing a hover tooltip |
+| `scripts/window-id.swift <owner> [title]` / `scripts/menu-bar-rect.swift` | Find the window, or the menu bar strip, to capture |
+| `scripts/redact.swift <in> <out> <x> <y> <w> <h> [label]` | Paints over a rectangle, for anything `-redactIdentity` doesn't cover |
+| `scripts/make-icon.swift <out.png> [size]` | Renders the app icon at one size |
+| `scripts/make-icon.swift --appiconset <dir>` | Renders all ten images of the Mac icon set |
 
 ---
+
+## Updates
+
+Remon updates itself with [Sparkle 2](https://sparkle-project.org). A released copy checks a
+signed appcast once a day and installs a new build only if the download carries a valid EdDSA
+signature from Remon's release key *and* is signed by the same Apple Developer ID as the copy
+already installed. The check is a plain HTTPS GET; no system profile is sent.
+
+| | |
+|---|---|
+| Feed | `SUFeedURL` in [Config/Info.plist](Config/Info.plist) → `docs/appcast.xml` on GitHub Pages |
+| Downloads | GitHub Releases, one zip per tag |
+| UI | **Check for Updates…** in the Remon menu, and Settings → General → Updates (automatic checks, background downloads, version, last check, Check Now) |
+| Cutting a release | `scripts/release.sh <version> [--publish]` — archive, Developer ID sign, notarize, staple, zip, sign for Sparkle, update the appcast |
+| Signing keys | `scripts/sparkle-keys.sh`, once; the private key stays in the login keychain |
+
+Local builds have an empty `SUPublicEDKey`, so the updater never starts: `⌘R` builds and the E2E
+harness make no update requests and show no update UI. [docs/RELEASING.md](docs/RELEASING.md) has
+the one-time setup (Developer ID certificate, notarytool credential, Sparkle key, GitHub Pages)
+and how to verify the whole loop before announcing a version.
 
 ## What's implemented
 
@@ -360,6 +401,7 @@ Remon/
     PolicyEnforcer.swift    block rules, hosts/pf script generator, privileged enforcer, PolicyCenter
     SearchQuery.swift       query language
     Formatting.swift        byte/rate formatting
+    UpdateController.swift  Sparkle updater (off in builds without a signing key)
   Store/
     SystemMonitor.swift     observable system metrics + 5-minute history
     MonitorStore.swift      @MainActor @Observable central state: rates, aggregation, history buffering
@@ -371,6 +413,9 @@ Remon/
                           SpeedTest, Alerts, Rules, QuickOpen, FloatingMonitor, Onboarding, Settings,
                           MenuBar, Components
 RemonTests/               Swift Testing suite
-docs/                     RESEARCH.md, SPEC.md, screenshots/
-scripts/                  make-icon.swift, screenshot.sh, window-id.swift
+Config/Info.plist         Sparkle feed URL and public key; merged with Xcode's generated Info.plist
+docs/                     RESEARCH.md, SPEC.md, RELEASING.md, appcast.xml, screenshots/, assets/ (icon PNGs)
+scripts/                  release.sh, sparkle-keys.sh, appcast.py, make-icon.swift,
+                          screenshots.sh, screenshot.sh, focus.swift, window-id.swift,
+                          menu-bar-rect.swift, redact.swift, e2e/
 ```

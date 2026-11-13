@@ -7,8 +7,11 @@ SECTION=$1; OUT=$2; WAIT=${3:-12}; TITLE=${4:-}
 shift 4 2>/dev/null || shift $#
 pkill -x Remon 2>/dev/null || true
 for i in {1..20}; do pgrep -x Remon >/dev/null || break; sleep 0.5; done; pkill -9 -x Remon 2>/dev/null || true
-open -n "$APP" --args -initialSection "$SECTION" -skipOnboarding YES -selectTop YES "$@"
+open -n "$APP" --args -initialSection "$SECTION" -skipOnboarding YES -selectTop YES -redactIdentity YES "$@"
 sleep "$WAIT"
+# Capture a key window with the cursor parked: an inactive window draws its materials and accents
+# grey, and a cursor left over a chart or row leaves a hover tooltip in the shot.
+swift scripts/focus.swift Remon >/dev/null || true
 WID=$(swift scripts/window-id.swift Remon $TITLE)
 screencapture -o -l "$WID" "$OUT"
 echo "captured $OUT (window $WID)"

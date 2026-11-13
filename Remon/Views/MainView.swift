@@ -25,6 +25,8 @@ struct MainView: View {
             Group { detail }
                 .modifier(SectionSearch())
                 .frame(minWidth: 340)
+                // The translucent window body every section sits on; see `WindowGlass`.
+                .background(WindowGlass().ignoresSafeArea())
                 .inspector(isPresented: inspectorBinding) {
                     SectionInspector()
                         .inspectorColumnWidth(min: 280, ideal: 320, max: 440)
@@ -70,27 +72,48 @@ struct MainView: View {
 
 struct Sidebar: View {
     @Environment(MonitorStore.self) private var store
+    /// Groups the user has folded away, by title. Kept in defaults, so the sidebar comes back the
+    /// way it was left.
+    @State private var collapsed = Set(UserDefaults.standard.stringArray(forKey: Sidebar.defaultsKey) ?? [])
+
+    private static let defaultsKey = "sidebarCollapsedGroups"
 
     var body: some View {
         @Bindable var store = store
         List(selection: Binding(get: { store.section }, set: { if let s = $0 { store.section = s } })) {
-            Section("Monitor") {
-                ForEach(SidebarSection.monitorSections) { section in
-                    row(section)
-                }
-            }
-            Section("Tools") {
-                ForEach(SidebarSection.toolSections) { section in
-                    row(section)
+            ForEach(SidebarSection.groups) { group in
+                // Hovering a group header shows macOS's own Show/Hide control, as in Finder and Mail.
+                Section(group.title, isExpanded: expansion(of: group)) {
+                    ForEach(group.sections) { section in
+                        row(section)
+                    }
                 }
             }
         }
         .listStyle(.sidebar)
-        .safeAreaInset(edge: .bottom) { SidebarFooter().padding(12) }
+        // The current section has to stay visible, whether it was chosen here or from somewhere else
+        // (⌘1…⌘9, Quick Open, a click in Overview), so open its group if it was folded. `initial`
+        // covers launching straight into a section inside a folded group.
+        .onChange(of: store.section, initial: true) { _, section in
+            guard let group = SidebarSection.group(containing: section), collapsed.contains(group.id) else { return }
+            withAnimation(.snappy) { setCollapsed(group.id, false) }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) { SidebarFooter() }
+    }
+
+    private func expansion(of group: SidebarGroup) -> Binding<Bool> {
+        Binding(get: { !collapsed.contains(group.id) }, set: { setCollapsed(group.id, !$0) })
+    }
+
+    private func setCollapsed(_ id: String, _ isCollapsed: Bool) {
+        if isCollapsed { collapsed.insert(id) } else { collapsed.remove(id) }
+        UserDefaults.standard.set(collapsed.sorted(), forKey: Self.defaultsKey)
     }
 
     private func row(_ section: SidebarSection) -> some View {
-        let count = badge(for: section)
+        // Only Alerts carries a badge: new alerts are worth a glance, while live app and connection
+        // counts changed every second and made the list busy (they're in the window subtitle).
+        let count = section == .alerts ? min(store.alerts.events.count, 99) : 0
         return Label(section.rawValue, systemImage: section.symbol)
             .badge(count)
             // With a badge, macOS exposes only the number to VoiceOver; name the row explicitly.
@@ -98,33 +121,31 @@ struct Sidebar: View {
             .accessibilityValue(count > 0 ? "\(count)" : "")
             .tag(section)
     }
-
-    private func badge(for section: SidebarSection) -> Int {
-        switch section {
-        case .apps: store.onlineAppCount
-        case .connections: store.activeConnectionCount
-        case .alerts: min(store.alerts.events.count, 99)
-        default: 0
-        }
-    }
 }
 
-/// Compact live readout pinned at the bottom of the sidebar.
+/// Compact live readout pinned at the bottom of the sidebar: connection state, a one-minute
+/// trace and the current rates.
 struct SidebarFooter: View {
     @Environment(MonitorStore.self) private var store
     @Environment(Preferences.self) private var preferences
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            Divider()
             HStack(spacing: 6) {
                 // Same meaning as everywhere else (Overview, menu bar panel, floating monitor):
                 // green online, red offline. Expensive / Low Data Mode are shown as words in Overview.
                 StatusDot(color: store.path.snapshot.isConnected ? .green : .red)
-                Text(store.path.statusText).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(store.path.statusText).font(.caption.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
+                if store.isPaused {
+                    Image(systemName: "pause.circle.fill").font(.caption).foregroundStyle(.orange)
+                        .help("Live updates are paused")
+                }
             }
+            .padding(.top, 4)
             ThroughputChart(points: Array(store.throughput.suffix(60)), window: 60, showsAxes: false, interactive: false)
-                .frame(height: 36)
+                .frame(height: 34)
             HStack {
                 Label(preferences.rate(store.currentIn), systemImage: "arrow.down")
                     .foregroundStyle(Theme.download)
@@ -134,8 +155,7 @@ struct SidebarFooter: View {
             }
             .font(.caption.monospacedDigit())
         }
-        .padding(10)
-        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 10, style: .continuous))
+        .padding(.horizontal, 14).padding(.bottom, 12)
     }
 }
 
@@ -175,15 +195,16 @@ struct MainToolbar: ToolbarContent {
             .help("Export data")
         }
 
-        if store.section.hasInspector {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    withAnimation(.snappy) { store.showInspector.toggle() }
-                } label: {
-                    Label("Inspector", systemImage: "sidebar.trailing")
-                }
-                .help("Toggle inspector (⌥⌘I)")
+        // Always in the same place; dimmed where the section has nothing to inspect, so the
+        // toolbar doesn't reshuffle when switching sections.
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                withAnimation(.snappy) { store.showInspector.toggle() }
+            } label: {
+                Label("Inspector", systemImage: "sidebar.trailing")
             }
+            .disabled(!store.section.hasInspector)
+            .help(store.section.hasInspector ? "Toggle inspector (⌥⌘I)" : "This section has no inspector")
         }
     }
 }

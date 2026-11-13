@@ -1,30 +1,251 @@
 import Charts
 import SwiftUI
 
-/// Speed and responsiveness test using Apple's `networkQuality`.
+/// Speed and responsiveness test using Apple's `networkQuality`. Laid out like every other
+/// section: a page bar with the action, headline tiles, then cards.
 struct SpeedTestView: View {
     @Environment(MonitorStore.self) private var store
+    @State private var width: CGFloat = 1_000
 
     var body: some View {
+        let latest = store.speedTestResults.first
+        let running = store.speedTestRunning
         ScrollView {
-            VStack(spacing: 18) {
-                SpeedTestHero()
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeading(running ? "Testing…" : (latest == nil ? "No Test Yet" : "Latest Result"), subtitle: subtitle(latest, running: running))
+                SpeedTiles(latest: latest, running: running, columns: width >= 820 ? 4 : 2)
+                QualityCard(latest: latest, running: running)
+                if !store.speedTestResults.isEmpty {
+                    SectionHeading("Previous Tests", subtitle: "How this connection has measured over time.")
+                }
                 if store.speedTestResults.count > 1 {
                     Card("Recent Tests", symbol: "chart.bar.xaxis",
-                         accessory: AnyView(ChartLegend(items: [("Download", Theme.download), ("Upload", Theme.upload)]))) {
+                         accessory: AnyView(ChartLegend(items: [("Download", Theme.download), ("Upload", Theme.upload)])),
+                         summary: AnyView(CardSummary(["\(store.speedTestResults.count) tests",
+                                                       "best ↓ \(SpeedFormat.text(store.speedTestResults.map(\.download).max() ?? 0))",
+                                                       "best ↑ \(SpeedFormat.text(store.speedTestResults.map(\.upload).max() ?? 0))"]))) {
                         SpeedHistoryChart(results: store.speedTestResults)
                             .frame(height: 190)
                     }
                 }
                 if !store.speedTestResults.isEmpty {
-                    Card("Past Results", symbol: "clock.arrow.circlepath") {
+                    // The chart above is the quick read; the full table is there when needed.
+                    Card("Past Results", symbol: "clock.arrow.circlepath",
+                         summary: AnyView(CardSummary(store.speedTestResults.prefix(3).map {
+                             "\($0.date.formatted(.dateTime.day().month(.abbreviated))) ↓ \(SpeedFormat.text($0.download)) ↑ \(SpeedFormat.text($0.upload))" })),
+                         collapsed: true) {
                         PastResultsTable(results: Array(store.speedTestResults.prefix(10)))
                     }
                 }
             }
-            .padding(20)
+            .padding(16)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .safeAreaInset(edge: .top, spacing: 0) { SpeedTestBar() }
+    }
+
+    private func subtitle(_ latest: SpeedTestResult?, running: Bool) -> String {
+        if running { return "Download and upload update live from this Mac's interfaces; responsiveness arrives when the test ends." }
+        guard let latest else { return "Run a test to measure download, upload and responsiveness against Apple's servers." }
+        let interface = latest.interface.map { " via \($0)" } ?? ""
+        return "Measured \(latest.date.formatted(.relative(presentation: .named)))\(interface)."
+    }
+}
+
+/// Page bar: the one action this section has, progress while it runs, and when it last ran.
+private struct SpeedTestBar: View {
+    @Environment(MonitorStore.self) private var store
+    /// networkQuality is run with `-M 25`, so a test takes at most this long.
+    static let maxDuration: Double = 25
+
+    var body: some View {
+        let running = store.speedTestRunning
+        let latest = store.speedTestResults.first
+        PageBar {
+            Button {
+                store.runSpeedTest()
+            } label: {
+                Label(running ? "Testing…" : (latest == nil ? "Run Test" : "Test Again"),
+                      systemImage: running ? "hourglass" : "play.fill")
+                    .frame(minWidth: 96)
+            }
+            .buttonStyle(.mint)
+            .disabled(running)
+            .keyboardShortcut("r", modifiers: [.command])
+            .help("Run Apple's networkQuality test (⌘R)")
+
+            if running, let started = store.speedTestStarted {
+                TimelineView(.periodic(from: started, by: 0.5)) { context in
+                    let elapsed = max(0, context.date.timeIntervalSince(started))
+                    HStack(spacing: 10) {
+                        ProgressView(value: min(elapsed, Self.maxDuration), total: Self.maxDuration)
+                            .progressViewStyle(.linear)
+                            .frame(width: 140)
+                        Text("\(Int(elapsed)) s of up to \(Int(Self.maxDuration))").monospacedDigit().foregroundStyle(.secondary)
+                    }
+                }
+            } else if let error = store.speedTestError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange).lineLimit(1).truncationMode(.tail)
+            }
+        } trailing: {
+            if let latest, !running {
+                Text("Last tested \(latest.date.formatted(.relative(presentation: .named)))").foregroundStyle(.secondary)
+            }
+            Image(systemName: "info.circle")
+                .foregroundStyle(.secondary)
+                .help("Uses Apple's built-in networkQuality test, the same one behind System Settings. It measures download and upload capacity and responsiveness under load against Apple's servers, and can transfer a few hundred megabytes.")
+                .accessibilityLabel("About this test")
+        }
+    }
+}
+
+/// The four headline numbers, in the same tiles the Overview and System sections use.
+private struct SpeedTiles: View {
+    @Environment(MonitorStore.self) private var store
+    var latest: SpeedTestResult?
+    var running: Bool
+    var columns: Int
+
+    var body: some View {
+        // While testing, show what the interfaces are actually moving (the kernel counters the rest of
+        // the app uses); networkQuality itself only reports when it finishes.
+        let download = running ? store.currentIn * 8 : latest?.download
+        let upload = running ? store.currentOut * 8 : latest?.upload
+        let previous = store.speedTestResults.dropFirst().first
+        let rpm = running ? nil : latest?.responsivenessRPM
+        let rtt = running ? nil : latest?.baseRTTms
+        let downloadNote = running ? ("Live", Theme.download) : change(latest?.download, previous?.download)
+        let uploadNote = running ? ("Live", Theme.upload) : change(latest?.upload, previous?.upload)
+        let rpmNote: (String, Color)? = running ? ("Measuring…", .secondary)
+            : latest.flatMap { r in r.responsivenessRPM.map { _ in ("\(r.responsivenessRating) responsiveness", SpeedFormat.responsivenessColor(r.responsivenessRating)) } }
+        let rttNote: (String, Color)? = running ? ("Measuring…", .secondary) : rtt.map(SpeedFormat.latencyRating)
+
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: columns), spacing: 12) {
+            StatTile(title: "Download", value: download.map(SpeedFormat.text) ?? "—", detail: downloadNote?.0,
+                     symbol: "arrow.down.circle.fill", tint: Theme.download, detailTint: downloadNote?.1)
+            StatTile(title: "Upload", value: upload.map(SpeedFormat.text) ?? "—", detail: uploadNote?.0,
+                     symbol: "arrow.up.circle.fill", tint: Theme.upload, detailTint: uploadNote?.1)
+            StatTile(title: "Responsiveness", value: rpm.map { "\(Int($0)) RPM" } ?? "—", detail: rpmNote?.0,
+                     symbol: "bolt.horizontal.circle.fill", tint: .purple, detailTint: rpmNote?.1)
+                .help("Round trips per minute while the connection is busy. Higher is better; low values mean calls and games lag when something else is downloading.")
+            StatTile(title: "Idle Latency", value: rtt.map { String(format: "%.0f ms", $0) } ?? "—", detail: rttNote?.0,
+                     symbol: "timer.circle.fill", tint: .teal, detailTint: rttNote?.1)
+                .help("Round-trip time to Apple's test servers on an otherwise idle connection.")
+        }
+        .animation(.smooth, value: download)
+    }
+
+    /// "+4.3 Mbps vs last" — how this result compares with the test before it.
+    private func change(_ now: Double?, _ before: Double?) -> (String, Color)? {
+        guard let now, let before else { return nil }
+        let delta = now - before
+        guard abs(delta) >= 0.05e6 else { return ("Same as last test", .secondary) }
+        return ("\(delta > 0 ? "+" : "−")\(SpeedFormat.text(abs(delta))) vs last test", delta > 0 ? .green : .orange)
+    }
+}
+
+/// The gauge, and what the result means in practice.
+private struct QualityCard: View {
+    @Environment(MonitorStore.self) private var store
+    var latest: SpeedTestResult?
+    var running: Bool
+
+    var body: some View {
+        let download = running ? store.currentIn * 8 : latest?.download
+        let upload = running ? store.currentOut * 8 : latest?.upload
+        Card("Connection Quality", symbol: "gauge.with.needle", collapsible: false) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: 24) {
+                    gauge(download: download, upload: upload)
+                    explanation.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                VStack(spacing: 16) {
+                    gauge(download: download, upload: upload)
+                    explanation
+                }
+            }
+        }
+    }
+
+    private func gauge(download: Double?, upload: Double?) -> some View {
+        SpeedGauge(download: download, upload: upload, running: running)
+            .frame(width: 250, height: 220)
+    }
+
+    @ViewBuilder private var explanation: some View {
+        if running {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Measuring…").font(.headline)
+                Text("The gauge follows this Mac's live download rate while networkQuality loads the connection. Download, upload and responsiveness are reported together when it finishes.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+        } else if let latest {
+            VStack(alignment: .leading, spacing: 14) {
+                SuitabilityRow(result: latest)
+                Text(verdict(latest)).font(.callout).foregroundStyle(.secondary)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Nothing measured yet").font(.headline)
+                Text("Click Run Test to measure download and upload capacity and how responsive the connection stays under load. The result shows what the connection is good for.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// One plain sentence about the result.
+    private func verdict(_ r: SpeedTestResult) -> String {
+        let down = r.download / 1e6
+        let speed = down >= 100 ? "Fast" : (down >= 25 ? "Solid" : "Modest")
+        let responsiveness: String = switch r.responsivenessRating {
+        case "High": "stays responsive when busy"
+        case "Medium": "slows a little when busy"
+        case "Low": "gets sluggish when busy, so calls and games may lag during downloads"
+        default: "responsiveness was not measured"
+        }
+        return "\(speed) connection that \(responsiveness)."
+    }
+}
+
+/// "Good for" checks derived from the latest result. Thresholds are in each chip's tooltip.
+private struct SuitabilityRow: View {
+    var result: SpeedTestResult
+
+    private var checks: [(name: String, symbol: String, ok: Bool, rule: String)] {
+        let down = result.download / 1e6, up = result.upload / 1e6
+        let rpm = result.responsivenessRPM, rtt = result.baseRTTms
+        return [
+            ("HD video", "play.rectangle", down >= 5, "5 Mbps download"),
+            ("4K video", "4k.tv", down >= 25, "25 Mbps download"),
+            ("Video calls", "video", down >= 3 && up >= 3 && (rpm ?? 0) >= 200,
+             "3 Mbps each way and medium or high responsiveness (200+ RPM)"),
+            ("Gaming", "gamecontroller", (rtt ?? .infinity) < 60 && (rpm ?? 0) >= 400,
+             "idle latency under 60 ms and 400+ RPM"),
+            ("Large uploads", "icloud.and.arrow.up", up >= 20, "20 Mbps upload"),
+        ]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Good for").font(.subheadline.weight(.semibold))
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 8, alignment: .leading)], alignment: .leading, spacing: 8) {
+                ForEach(checks, id: \.name) { check in
+                    HStack(spacing: 6) {
+                        Image(systemName: check.ok ? "checkmark.circle.fill" : "xmark.circle")
+                            .foregroundStyle(check.ok ? AnyShapeStyle(.green) : AnyShapeStyle(.tertiary))
+                        Label(check.name, systemImage: check.symbol)
+                            .labelStyle(.titleOnly)
+                            .foregroundStyle(check.ok ? .primary : .secondary)
+                    }
+                    .font(.callout)
+                    .help("\(check.ok ? "Meets" : "Needs") \(check.rule)")
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(check.name)
+                    .accessibilityValue(check.ok ? "Suitable" : "Not suitable; needs \(check.rule)")
+                }
+            }
+        }
     }
 }
 
@@ -62,290 +283,75 @@ enum SpeedFormat {
     }
 }
 
-// MARK: - Hero
-
-private struct SpeedTestHero: View {
-    @Environment(MonitorStore.self) private var store
-    /// networkQuality is run with `-M 25`, so a test takes at most this long.
-    private let maxDuration: Double = 25
-
-    var body: some View {
-        let latest = store.speedTestResults.first
-        let running = store.speedTestRunning
-        // While testing, show what the interfaces are actually moving (the kernel counters the rest of
-        // the app uses); networkQuality itself only reports when it finishes.
-        let download = running ? store.currentIn * 8 : latest?.download
-        let upload = running ? store.currentOut * 8 : latest?.upload
-
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .center, spacing: 36) {
-                gauge(download: download, upload: upload, running: running)
-                details(latest: latest, download: download, upload: upload, running: running)
-                    .frame(minWidth: 400)
-            }
-            VStack(spacing: 24) {
-                gauge(download: download, upload: upload, running: running)
-                details(latest: latest, download: download, upload: upload, running: running)
-            }
-        }
-        .padding(24)
-        .frame(maxWidth: .infinity)
-        .background {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-                .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.separator.opacity(0.6), lineWidth: 0.5)
-        }
-    }
-
-    private func gauge(download: Double?, upload: Double?, running: Bool) -> some View {
-        SpeedGauge(download: download, upload: upload, running: running)
-            .frame(width: 300, height: 270)
-            .background {
-                // A soft wash of the download colour behind the gauge, wherever the layout puts it.
-                RadialGradient(colors: [Theme.download.opacity(0.16), .clear], center: .center, startRadius: 0, endRadius: 260)
-                    .frame(width: 520, height: 520)
-                    .allowsHitTesting(false)
-            }
-    }
-
-    private func details(latest: SpeedTestResult?, download: Double?, upload: Double?, running: Bool) -> some View {
-        let previous = store.speedTestResults.dropFirst().first
-        return VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Network Quality").font(.title2.weight(.semibold))
-                    statusLine(latest: latest, running: running)
-                        .font(.callout).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "info.circle")
-                    .foregroundStyle(.secondary)
-                    .help("Uses Apple's built-in networkQuality test, the same one behind System Settings. It measures download and upload capacity and responsiveness under load against Apple's servers, and can transfer a few hundred megabytes.")
-                    .accessibilityLabel("About this test")
-            }
-
-            Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-                GridRow {
-                    MetricCell(title: "Download", symbol: "arrow.down", tint: Theme.download,
-                               value: download.map(SpeedFormat.value),
-                               note: running ? ("Live", Theme.download) : change(latest?.download, previous?.download))
-                    MetricCell(title: "Upload", symbol: "arrow.up", tint: Theme.upload,
-                               value: upload.map(SpeedFormat.value),
-                               note: running ? ("Live", Theme.upload) : change(latest?.upload, previous?.upload))
-                }
-                GridRow {
-                    MetricCell(title: "Responsiveness", symbol: "bolt.horizontal", tint: .purple,
-                               value: running ? nil : latest?.responsivenessRPM.map { ("\(Int($0))", "RPM") },
-                               note: running ? ("Measuring…", .secondary)
-                                   : latest.flatMap { r in r.responsivenessRPM.map { _ in
-                                       (r.responsivenessRating, SpeedFormat.responsivenessColor(r.responsivenessRating)) } })
-                        .help("Round trips per minute while the connection is busy. Higher is better; low values mean calls and games lag when something else is downloading.")
-                    MetricCell(title: "Idle Latency", symbol: "timer", tint: .teal,
-                               value: running ? nil : latest?.baseRTTms.map { (String(format: "%.0f", $0), "ms") },
-                               note: running ? ("Measuring…", .secondary) : latest?.baseRTTms.map(SpeedFormat.latencyRating))
-                        .help("Round-trip time to Apple's test servers on an otherwise idle connection.")
-                }
-            }
-
-            if let latest, !running {
-                SuitabilityRow(result: latest)
-            }
-
-            HStack(spacing: 14) {
-                Button {
-                    store.runSpeedTest()
-                } label: {
-                    Label(running ? "Testing…" : (latest == nil ? "Run Test" : "Test Again"),
-                          systemImage: running ? "hourglass" : "play.fill")
-                        .frame(minWidth: 120)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(running)
-                .keyboardShortcut("r", modifiers: [.command])
-
-                if running, let started = store.speedTestStarted {
-                    TimelineView(.periodic(from: started, by: 0.5)) { context in
-                        let elapsed = max(0, context.date.timeIntervalSince(started))
-                        HStack(spacing: 10) {
-                            ProgressView(value: min(elapsed, maxDuration), total: maxDuration)
-                                .progressViewStyle(.linear)
-                                .frame(width: 140)
-                            Text("\(Int(elapsed)) s").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                if let error = store.speedTestError, !running {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange).font(.callout).lineLimit(2)
-                }
-            }
-        }
-    }
-
-    /// "+4.3 Mbps vs last" — how this result compares with the test before it.
-    private func change(_ now: Double?, _ before: Double?) -> (String, Color)? {
-        guard let now, let before else { return nil }
-        let delta = now - before
-        guard abs(delta) >= 0.05e6 else { return ("Same as last", .secondary) }
-        return ("\(delta > 0 ? "+" : "−")\(SpeedFormat.text(abs(delta))) vs last", delta > 0 ? .green : .orange)
-    }
-
-    @ViewBuilder
-    private func statusLine(latest: SpeedTestResult?, running: Bool) -> some View {
-        if running {
-            Text("Testing download, upload and responsiveness — up to \(Int(maxDuration)) seconds")
-        } else if let latest {
-            let interface = latest.interface.map { " · via \($0)" } ?? ""
-            Text("Last tested \(latest.date.formatted(.relative(presentation: .named)))\(interface)")
-        } else {
-            Text("Measure your connection with Apple's networkQuality test.")
-        }
-    }
-}
-
-/// One measurement in the hero: label, big number with its unit, and an optional rating.
-private struct MetricCell: View {
-    var title: String
-    var symbol: String
-    var tint: Color
-    var value: (number: String, unit: String)?
-    var note: (String, Color)?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: symbol)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(tint)
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(value?.number ?? "—")
-                    .font(.system(size: 26, weight: .semibold, design: .rounded).monospacedDigit())
-                    .contentTransition(.numericText())
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                if let unit = value?.unit {
-                    Text(unit).font(.callout).foregroundStyle(.secondary)
-                }
-            }
-            // Reserve the line so every cell has the same height.
-            Group {
-                if let note {
-                    Text(note.0)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(note.1)
-                        .padding(.horizontal, 6).padding(.vertical, 1)
-                        .background(note.1.opacity(0.14), in: .capsule)
-                } else {
-                    Text(" ").font(.caption2)
-                }
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.07), in: .rect(cornerRadius: 12, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(tint.opacity(0.15), lineWidth: 0.5) }
-        .animation(.smooth, value: value?.number)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
-        .accessibilityValue([value.map { "\($0.number) \($0.unit)" } ?? "No result", note?.0].compactMap { $0 }.joined(separator: ", "))
-    }
-}
-
-/// "Good for" checks derived from the latest result. Thresholds are in each chip's tooltip.
-private struct SuitabilityRow: View {
-    var result: SpeedTestResult
-
-    private var checks: [(name: String, symbol: String, ok: Bool, rule: String)] {
-        let down = result.download / 1e6, up = result.upload / 1e6
-        let rpm = result.responsivenessRPM, rtt = result.baseRTTms
-        return [
-            ("HD video", "play.rectangle", down >= 5, "5 Mbps download"),
-            ("4K video", "4k.tv", down >= 25, "25 Mbps download"),
-            ("Video calls", "video", down >= 3 && up >= 3 && (rpm ?? 0) >= 200,
-             "3 Mbps each way and medium or high responsiveness (200+ RPM)"),
-            ("Gaming", "gamecontroller", (rtt ?? .infinity) < 60 && (rpm ?? 0) >= 400,
-             "idle latency under 60 ms and 400+ RPM"),
-            ("Large uploads", "icloud.and.arrow.up", up >= 20, "20 Mbps upload"),
-        ]
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Good for").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 128), spacing: 8, alignment: .leading)], alignment: .leading, spacing: 8) {
-                ForEach(checks, id: \.name) { check in
-                    HStack(spacing: 6) {
-                        Image(systemName: check.ok ? "checkmark.circle.fill" : "xmark.circle")
-                            .foregroundStyle(check.ok ? AnyShapeStyle(.green) : AnyShapeStyle(.tertiary))
-                        Label(check.name, systemImage: check.symbol)
-                            .labelStyle(.titleOnly)
-                            .foregroundStyle(check.ok ? .primary : .secondary)
-                    }
-                    .font(.callout)
-                    .help("\(check.ok ? "Meets" : "Needs") \(check.rule)")
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(check.name)
-                    .accessibilityValue(check.ok ? "Suitable" : "Not suitable; needs \(check.rule)")
-                }
-            }
-        }
-    }
-}
-
 // MARK: - Gauge
 
-/// 270° gauge on a log scale (1 Mbps … 10 Gbps) with decade ticks. Shows download in the centre and
-/// upload underneath.
+/// Twin-ring gauge on a log scale (1 Mbps … 10 Gbps): the outer ring is download, the thinner inner
+/// ring upload. A 240° sweep leaves a gap at the bottom for the scale's ends.
 struct SpeedGauge: View {
     var download: Double?
     var upload: Double?
     var running: Bool
 
-    private let startAngle = 135.0, sweep = 270.0, lineWidth: CGFloat = 16
+    private let startAngle = 150.0, sweep = 240.0
+    private let outerWidth: CGFloat = 13, innerWidth: CGFloat = 7
 
     var body: some View {
-        let fraction = normalized(download)
+        let down = normalized(download), up = normalized(upload)
         GeometryReader { geo in
-            let size = min(geo.size.width, geo.size.height / 0.9)
-            let radius = size / 2 - lineWidth
-            let center = CGPoint(x: geo.size.width / 2, y: size / 2)
+            let size = min(geo.size.width, geo.size.height)
+            let center = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2 + size * 0.03)
+            let outer = size / 2 - outerWidth
+            let inner = outer - outerWidth - 8
+            let unitCenter = UnitPoint(x: center.x / max(geo.size.width, 1), y: center.y / max(geo.size.height, 1))
             ZStack {
-                ticks(center: center, radius: radius)
-                ArcShape(start: startAngle, sweep: sweep, fraction: 1, center: center, radius: radius)
-                    .stroke(.quaternary, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                ArcShape(start: startAngle, sweep: sweep, fraction: fraction, center: center, radius: radius)
-                    .stroke(AngularGradient(colors: [Theme.download.opacity(0.35), Theme.download, Theme.download],
-                                            center: .init(x: center.x / max(geo.size.width, 1), y: center.y / max(geo.size.height, 1)),
+                // Tracks.
+                ArcShape(start: startAngle, sweep: sweep, fraction: 1, center: center, radius: outer)
+                    .stroke(.primary.opacity(0.07), style: StrokeStyle(lineWidth: outerWidth, lineCap: .round))
+                ArcShape(start: startAngle, sweep: sweep, fraction: 1, center: center, radius: inner)
+                    .stroke(.primary.opacity(0.07), style: StrokeStyle(lineWidth: innerWidth, lineCap: .round))
+                // Decade marks just outside the outer ring.
+                ForEach(0..<5, id: \.self) { i in
+                    Circle().fill(.tertiary)
+                        .frame(width: 3, height: 3)
+                        .position(point(center: center, radius: outer + outerWidth, fraction: Double(i) / 4))
+                }
+                // Download (outer) and upload (inner).
+                ArcShape(start: startAngle, sweep: sweep, fraction: down, center: center, radius: outer)
+                    .stroke(AngularGradient(colors: [Theme.download.opacity(0.4), Theme.download], center: unitCenter,
                                             startAngle: .degrees(startAngle), endAngle: .degrees(startAngle + sweep)),
-                            style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                    .shadow(color: Theme.download.opacity(fraction > 0 ? 0.45 : 0), radius: 8)
-                // Knob at the end of the arc.
+                            style: StrokeStyle(lineWidth: outerWidth, lineCap: .round))
+                    .shadow(color: Theme.download.opacity(down > 0 ? 0.5 : 0), radius: 8)
+                ArcShape(start: startAngle, sweep: sweep, fraction: up, center: center, radius: inner)
+                    .stroke(AngularGradient(colors: [Theme.upload.opacity(0.4), Theme.upload], center: unitCenter,
+                                            startAngle: .degrees(startAngle), endAngle: .degrees(startAngle + sweep)),
+                            style: StrokeStyle(lineWidth: innerWidth, lineCap: .round))
+                    .shadow(color: Theme.upload.opacity(up > 0 ? 0.45 : 0), radius: 6)
                 Circle()
                     .fill(.white)
-                    .frame(width: lineWidth - 4, height: lineWidth - 4)
-                    .shadow(color: Theme.download.opacity(0.8), radius: 4)
-                    .position(point(center: center, radius: radius, fraction: fraction))
-                    .opacity(fraction > 0 ? 1 : 0)
-                readout
-                    .position(x: center.x, y: center.y + 6)
+                    .frame(width: outerWidth - 5, height: outerWidth - 5)
+                    .shadow(color: Theme.download.opacity(0.8), radius: 3)
+                    .position(point(center: center, radius: outer, fraction: down))
+                    .opacity(down > 0 ? 1 : 0)
+                // Scale ends, in the gap under the rings.
+                Text("1 Mbps").position(point(center: center, radius: outer + 2, fraction: 0).applying(.init(translationX: 4, y: 16)))
+                Text("10 Gbps").position(point(center: center, radius: outer + 2, fraction: 1).applying(.init(translationX: -4, y: 16)))
+                readout.position(center)
             }
-            .animation(.spring(duration: 0.9, bounce: 0.2), value: fraction)
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .animation(.spring(duration: 0.9, bounce: 0.15), value: down)
+            .animation(.spring(duration: 0.9, bounce: 0.15), value: up)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(running ? "Live download speed" : "Download speed")
-        .accessibilityValue(download.map(SpeedFormat.text) ?? "No result yet")
+        .accessibilityLabel(running ? "Live speed" : "Measured speed")
+        .accessibilityValue("Download \(download.map(SpeedFormat.text) ?? "no result"), upload \(upload.map(SpeedFormat.text) ?? "no result")")
     }
 
     private var readout: some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 0) {
             HStack(spacing: 5) {
                 if running {
                     Circle().fill(.red).frame(width: 6, height: 6)
-                        .symbolEffect(.pulse, isActive: true)
                     Text("LIVE")
                 } else {
                     Image(systemName: "arrow.down")
@@ -355,59 +361,33 @@ struct SpeedGauge: View {
             .font(.caption2.weight(.semibold))
             .tracking(1.2)
             .foregroundStyle(.secondary)
+            .padding(.bottom, 2)
 
             if let download {
                 let v = SpeedFormat.value(download)
                 Text(v.number)
-                    .font(.system(size: 54, weight: .semibold, design: .rounded).monospacedDigit())
+                    .font(.system(size: 46, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.primary)
                     .contentTransition(.numericText())
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                Text(v.unit).font(.title3.weight(.medium)).foregroundStyle(.secondary)
+                Text(v.unit).font(.callout.weight(.medium)).foregroundStyle(.secondary)
             } else {
                 Text("—")
-                    .font(.system(size: 54, weight: .semibold, design: .rounded))
+                    .font(.system(size: 46, weight: .semibold, design: .rounded))
                     .foregroundStyle(.tertiary)
-                Text("Ready").font(.title3.weight(.medium)).foregroundStyle(.secondary)
+                Text("Ready").font(.callout.weight(.medium)).foregroundStyle(.secondary)
             }
             if let upload {
                 Label(SpeedFormat.text(upload), systemImage: "arrow.up")
-                    .font(.callout.monospacedDigit())
+                    .font(.callout.weight(.medium).monospacedDigit())
                     .foregroundStyle(Theme.upload)
                     .contentTransition(.numericText())
-                    .padding(.top, 6)
+                    .padding(.top, 8)
             }
         }
-        .frame(width: 200)
+        .frame(width: 150)
         .animation(.smooth, value: download)
-    }
-
-    /// Decade ticks (1, 10, 100 Mbps, 1, 10 Gbps) with labels, and minor ticks at 2× and 5×.
-    private func ticks(center: CGPoint, radius: CGFloat) -> some View {
-        let labels = ["1", "10", "100", "1G", "10G"]
-        let minor = (0..<4).flatMap { decade in [log10(2.0), log10(5.0)].map { (Double(decade) + $0) / 4 } }
-        return ZStack {
-            ForEach(0..<5, id: \.self) { i in
-                let f = Double(i) / 4
-                tick(center: center, from: radius - lineWidth / 2 - 6, to: radius - lineWidth / 2 - 14, fraction: f)
-                    .stroke(.secondary, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                Text(labels[i])
-                    .font(.caption2.weight(.medium).monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .position(point(center: center, radius: radius - lineWidth / 2 - 26, fraction: f))
-            }
-            ForEach(minor, id: \.self) { f in
-                tick(center: center, from: radius - lineWidth / 2 - 6, to: radius - lineWidth / 2 - 10, fraction: f)
-                    .stroke(.tertiary, style: StrokeStyle(lineWidth: 1, lineCap: .round))
-            }
-        }
-    }
-
-    private func tick(center: CGPoint, from r1: CGFloat, to r2: CGFloat, fraction: Double) -> Path {
-        Path { p in
-            p.move(to: point(center: center, radius: r1, fraction: fraction))
-            p.addLine(to: point(center: center, radius: r2, fraction: fraction))
-        }
     }
 
     private func point(center: CGPoint, radius: CGFloat, fraction: Double) -> CGPoint {

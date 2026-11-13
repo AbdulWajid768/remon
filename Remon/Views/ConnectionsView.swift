@@ -116,23 +116,25 @@ struct ConnectionsView: View {
                 }
             }
         }
+        // A frosted panel behind the rows: with nothing behind them, AppKit renders the cells with
+        // vibrancy and the coloured rates and protocol badges wash out. Stripes on glass were too dark.
+        .scrollContentBackground(.hidden)
+        .alternatingRowBackgrounds(.disabled)
+        .background(.thinMaterial)
         .safeAreaInset(edge: .top, spacing: 0) {
-            HStack {
+            PageBar {
                 Picker("Scope", selection: $store.connectionScope) {
                     ForEach(ConnectionScope.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
-                Spacer()
+            } trailing: {
                 if store.isPaused {
                     Label("Paused", systemImage: "pause.circle.fill").foregroundStyle(.orange)
                 }
                 Text("\(rows.count) shown").foregroundStyle(.secondary)
             }
-            .font(.callout)
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            .background(.bar)
         }
     }
 
@@ -288,3 +290,4 @@ struct BlockServerButton: View {
         }
     }
 }
+

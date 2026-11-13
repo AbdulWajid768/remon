@@ -81,7 +81,7 @@ struct MapView: View {
                 }
                 .controlSize(.small)
                 .padding(8)
-                .background(.regularMaterial, in: .rect(cornerRadius: 10))
+                .glassPanel(in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .padding(12)
             }
             .overlay {
@@ -183,7 +183,7 @@ struct MapView: View {
         }
         .font(.caption)
         .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(.regularMaterial, in: .capsule)
+        .glassPanel(in: Capsule())
     }
 
     private func sidePanel(_ destinations: [Destination]) -> some View {
@@ -219,6 +219,7 @@ struct MapView: View {
             }
         }
         .listStyle(.inset)
+        .scrollContentBackground(.hidden)
     }
 
     private func computeDestinations() -> [Destination] {

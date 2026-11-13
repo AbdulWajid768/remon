@@ -51,8 +51,26 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
     /// Sections whose content the toolbar search field filters. Elsewhere the field is hidden.
     var hasSearch: Bool { [.apps, .connections, .map, .history, .log].contains(self) }
 
-    static let monitorSections: [SidebarSection] = [.overview, .system, .apps, .connections, .map, .history, .log]
-    static let toolSections: [SidebarSection] = [.speedTest, .alerts, .rules]
+    /// Sidebar groups, in order. Each is a small headed list of related sections.
+    static let groups: [SidebarGroup] = [
+        SidebarGroup(title: "Dashboards", sections: [.overview, .system]),
+        SidebarGroup(title: "Traffic", sections: [.apps, .connections, .map]),
+        SidebarGroup(title: "Records", sections: [.history, .log]),
+        SidebarGroup(title: "Tools", sections: [.speedTest, .alerts, .rules]),
+    ]
+}
+
+struct SidebarGroup: Identifiable {
+    var title: String
+    var sections: [SidebarSection]
+    var id: String { title }
+}
+
+extension SidebarSection {
+    /// The sidebar group a section lives in.
+    static func group(containing section: SidebarSection) -> SidebarGroup? {
+        groups.first { $0.sections.contains(section) }
+    }
 }
 
 /// Central live state. Consumes the traffic source and interface counters, computes rates,
@@ -177,6 +195,8 @@ final class MonitorStore {
             self.section = section
         }
         if UserDefaults.standard.bool(forKey: "skipOnboarding") { showOnboarding = false }
+        // Forces the welcome sheet back up without clearing the preference, for the screenshot script.
+        if UserDefaults.standard.bool(forKey: "showOnboarding") { showOnboarding = true }
         autoSelectTop = UserDefaults.standard.bool(forKey: "selectTop")
     }
 
