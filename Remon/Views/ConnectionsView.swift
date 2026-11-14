@@ -73,7 +73,7 @@ struct ConnectionsView: View {
             if columns.state {
                 TableColumn("State", value: \.state) { c in
                     if store.policy.isBlocked(address: c.remote.bareAddress) {
-                        Label("Blocked", systemImage: "hand.raised.fill").foregroundStyle(.red)
+                        Label("Blocked", systemImage: "hand.raised.fill").foregroundStyle(Palette.garnet)
                     } else {
                         Text(c.isClosed ? "Closed" : c.displayState).foregroundStyle(c.isClosed ? .tertiary : .secondary)
                     }
@@ -131,7 +131,7 @@ struct ConnectionsView: View {
                 .fixedSize()
             } trailing: {
                 if store.isPaused {
-                    Label("Paused", systemImage: "pause.circle.fill").foregroundStyle(.orange)
+                    Label("Paused", systemImage: "pause.circle.fill").foregroundStyle(Palette.ember)
                 }
                 Text("\(rows.count) shown").foregroundStyle(.secondary)
             }
@@ -147,9 +147,9 @@ struct ConnectionsView: View {
 
     private func protoColor(_ p: TransportProtocol) -> Color {
         switch p {
-        case .tcp: .blue
-        case .udp: .purple
-        case .quic: .pink
+        case .tcp: Palette.azure
+        case .udp: Palette.violet
+        case .quic: Palette.plum
         }
     }
 }

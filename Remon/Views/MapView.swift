@@ -109,6 +109,15 @@ struct MapView: View {
                 try? await Task.sleep(for: .seconds(3))
             }
         }
+        // Map has no filters of its own, but it is searchable, so it gets the page bar for the
+        // search field — and the row then carries the count, as every other section's does.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            PageBar {
+                EmptyView()
+            } trailing: {
+                Text("\(destinations.count) located").foregroundStyle(.secondary)
+            }
+        }
         .onChange(of: store.searchText) { refresh() }
         .onChange(of: globe) { fitAll(animated: true) }
 

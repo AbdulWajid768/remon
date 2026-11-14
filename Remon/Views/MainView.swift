@@ -1,17 +1,30 @@
+import AppKit
 import SwiftUI
 
 struct MainView: View {
     @Environment(MonitorStore.self) private var store
     @Environment(Preferences.self) private var preferences
 
+    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
+    @State private var splitFrame: CGRect = .zero
+    @State private var searchUI = SearchUIState()
+    @State private var isFullScreen = false
+
     private var inspectorBinding: Binding<Bool> {
         Binding(get: { store.showInspector && store.section.hasInspector },
                 set: { if store.section.hasInspector { store.showInspector = $0 } })
     }
 
+    /// With the sidebar hidden the detail column runs to the window edge. In a window that edge is
+    /// rounded and inset from the desktop, so content meeting it reads as deliberate; full screen
+    /// puts it flush against the side of the display, where the table headers and the scope picker
+    /// sit hard against the bezel. The sidebar is an inset panel with a margin of its own, so
+    /// losing it shouldn't lose the margin: put it back on the detail column instead.
+    private var collapsedGutter: CGFloat { columnVisibility == .detailOnly ? 14 : 0 }
+
     var body: some View {
         @Bindable var store = store
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             Sidebar()
                 .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
         } detail: {
@@ -23,7 +36,8 @@ struct MainView: View {
             // than the window and clipped the sidebar (and the inspector). The E2E `layout` scenario
             // checks this.
             Group { detail }
-                .modifier(SectionSearch())
+                .safeAreaPadding(.leading, collapsedGutter)
+                .animation(.snappy(duration: 0.25), value: collapsedGutter)
                 .frame(minWidth: 340)
                 // The translucent window body every section sits on; see `WindowGlass`.
                 .background(WindowGlass().ignoresSafeArea())
@@ -32,7 +46,30 @@ struct MainView: View {
                         .inspectorColumnWidth(min: 280, ideal: 320, max: 440)
                 }
         }
-        .toolbar { MainToolbar() }
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { splitFrame = $0 }
+        // `-sidebarCollapsed YES|NO`, for demos and for capturing either sidebar layout. Only
+        // honoured when the argument is actually present, so an ordinary launch keeps whatever
+        // the window restored.
+        .task {
+            guard UserDefaults.standard.object(forKey: "sidebarCollapsed") != nil else { return }
+            columnVisibility = UserDefaults.standard.bool(forKey: "sidebarCollapsed") ? .detailOnly : .all
+        }
+        // The suggestion panel hangs off the toolbar field. A popover would take key focus away
+        // from the field mid-typing, so it is an overlay in this window, positioned under the
+        // field's measured frame.
+        .overlay(alignment: .topLeading) {
+            if searchUI.showingSuggestions, store.section.hasSearch, searchUI.fieldFrame != .zero {
+                SearchSuggestionPanel { completion in
+                    store.searchText = completion
+                }
+                .offset(x: searchUI.fieldFrame.minX - splitFrame.minX,
+                        y: searchUI.fieldFrame.maxY - splitFrame.minY + 6)
+                .transaction { $0.animation = nil }
+            }
+        }
+        .environment(searchUI)
+        .background { FullScreenReporter(isFullScreen: $isFullScreen) }
+        .toolbar { MainToolbar(isFullScreen: isFullScreen) }
         .sheet(isPresented: $store.showOnboarding) {
             OnboardingView()
                 .interactiveDismissDisabled()
@@ -135,11 +172,11 @@ struct SidebarFooter: View {
             HStack(spacing: 6) {
                 // Same meaning as everywhere else (Overview, menu bar panel, floating monitor):
                 // green online, red offline. Expensive / Low Data Mode are shown as words in Overview.
-                StatusDot(color: store.path.snapshot.isConnected ? .green : .red)
+                StatusDot(color: store.path.snapshot.isConnected ? Palette.jade : Palette.garnet)
                 Text(store.path.statusText).font(.caption.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
                 if store.isPaused {
-                    Image(systemName: "pause.circle.fill").font(.caption).foregroundStyle(.orange)
+                    Image(systemName: "pause.circle.fill").font(.caption).foregroundStyle(Palette.ember)
                         .help("Live updates are paused")
                 }
             }
@@ -161,8 +198,31 @@ struct SidebarFooter: View {
 
 struct MainToolbar: ToolbarContent {
     @Environment(MonitorStore.self) private var store
+    var isFullScreen = false
+
+    private var logo: some View {
+        RemonLogo()
+            .frame(height: 15)
+            .padding(.trailing, 2)
+            .accessibilityHidden(true)
+    }
 
     var body: some ToolbarContent {
+        // Full screen strips the window of its traffic lights and title bar, so the top of the
+        // window carries no sign of which app it is. The toolbar strip is also the only thing that
+        // can draw in that band — a SwiftUI overlay is clipped to the column's frame, which starts
+        // below it — so the mark goes here, between the sidebar toggle and the section title.
+        if isFullScreen {
+            if #available(macOS 26, *) {
+                // macOS 26 gives every toolbar item a glass capsule, which would make the logo
+                // look like a button you can press. The mark is decoration, so drop it.
+                ToolbarItem(placement: .navigation) { logo }
+                    .sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItem(placement: .navigation) { logo }
+            }
+        }
+
         // App-wide actions, always in the same order and in one glass group. A menu's indicator
         // gets a capsule of its own on macOS 26, so Export hides it to stay in the group.
         ToolbarItemGroup(placement: .primaryAction) {
@@ -209,76 +269,6 @@ struct MainToolbar: ToolbarContent {
     }
 }
 
-/// The toolbar search field, shown only on sections whose content it filters.
-private struct SectionSearch: ViewModifier {
-    @Environment(MonitorStore.self) private var store
-    @FocusState private var searchFocused: Bool
-    @State private var handledFocusRequest = 0
-
-    func body(content: Content) -> some View {
-        @Bindable var store = store
-        if store.section.hasSearch {
-            content
-                .searchable(text: $store.searchText, placement: .toolbar, prompt: prompt)
-                .searchFocused($searchFocused)
-                // `initial`: ⌘F on a section without search switches here first, so the request
-                // arrives with this view, before the toolbar has built the field; focus it a moment later.
-                .onChange(of: store.focusSearchRequest, initial: true) { old, new in
-                    guard new != handledFocusRequest else { return }
-                    handledFocusRequest = new
-                    if old != new { searchFocused = true; return }
-                    Task {
-                        try? await Task.sleep(for: .milliseconds(150))
-                        searchFocused = true
-                    }
-                }
-                .searchSuggestions { SearchSuggestions() }
-        } else {
-            content
-        }
-    }
-
-    private var prompt: String {
-        switch store.section {
-        case .apps: "Search apps, hosts, countries…"
-        case .history: "Search apps"
-        case .log: "Search app, host, IP, country, organisation"
-        case .map: "Filter destinations"
-        default: "Search — try app:Safari port:443 -cat:apple"
-        }
-    }
-}
-
-struct SearchSuggestions: View {
-    @Environment(MonitorStore.self) private var store
-
-    var body: some View {
-        let text = store.searchText.trimmingCharacters(in: .whitespaces)
-        if text.count >= 1, !text.contains(":") {
-            let apps = store.apps.filter { $0.name.localizedStandardContains(text) }.prefix(4)
-            ForEach(Array(apps)) { app in
-                Label { Text("app:\(app.name)") } icon: { AppIcon(identity: app.identity, size: 14) }
-                    .searchCompletion("app:\"\(app.name)\" ")
-            }
-            let hosts = Set(store.connections.compactMap(\.hostname).filter { $0.localizedStandardContains(text) }).sorted().prefix(4)
-            ForEach(Array(hosts), id: \.self) { host in
-                Label("host:\(host)", systemImage: "globe").searchCompletion("host:\(host) ")
-            }
-            let countries = Set(store.connections.compactMap { c -> String? in
-                guard let name = c.geo?.country, name.localizedStandardContains(text) else { return nil }
-                return c.geo?.countryCode
-            }).sorted().prefix(3)
-            ForEach(Array(countries), id: \.self) { code in
-                Label("country:\(code)", systemImage: "flag").searchCompletion("country:\(code) ")
-            }
-        } else if text.isEmpty {
-            ForEach(["proto:udp", "port:443", "cat:telemetry", "state:established", "-cat:apple"], id: \.self) { token in
-                Label(token, systemImage: "line.3.horizontal.decrease.circle").searchCompletion(token + " ")
-            }
-        }
-    }
-}
-
 /// Launch arguments used for unattended screenshots and demos:
 /// `-openSettings YES`, `-quickOpen YES`, `-previewMenuPanel YES`.
 private struct DemoLaunchHooks: ViewModifier {
@@ -319,6 +309,49 @@ struct SectionInspector: View {
             }
         default:
             EmptyView()
+        }
+    }
+}
+
+
+/// Reports whether the window this view lives in is full screen. The sidebar's top block is only
+/// dead space there, so the chrome needs to know.
+private struct FullScreenReporter: NSViewRepresentable {
+    @Binding var isFullScreen: Bool
+
+    func makeNSView(context: Context) -> NSView { Reporter(isFullScreen: $isFullScreen) }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class Reporter: NSView {
+        private let isFullScreen: Binding<Bool>
+        private var observers: [NSObjectProtocol] = []
+
+        init(isFullScreen: Binding<Bool>) {
+            self.isFullScreen = isFullScreen
+            super.init(frame: .zero)
+        }
+
+        @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            // Re-registered rather than torn down in deinit: the observers are scoped to one
+            // window, and this view outlives none of them.
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
+            guard let window else { return }
+            report(window)
+            let center = NotificationCenter.default
+            for name in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
+                observers.append(center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.report(window) }
+                })
+            }
+        }
+
+        private func report(_ window: NSWindow) {
+            let full = window.styleMask.contains(.fullScreen)
+            if isFullScreen.wrappedValue != full { isFullScreen.wrappedValue = full }
         }
     }
 }

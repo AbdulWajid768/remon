@@ -70,7 +70,7 @@ struct RulesView: View {
                 let ok = !policy.needsApply && policy.lastError == nil
                 Image(systemName: policy.isApplying ? "hourglass" : (ok ? "checkmark.shield.fill" : "exclamationmark.shield.fill"))
                     .font(.title2)
-                    .foregroundStyle(policy.isApplying ? Color.secondary : (ok ? Color.green : Color.orange))
+                    .foregroundStyle(policy.isApplying ? Color.secondary : (ok ? Palette.jade : Palette.ember))
                     .frame(width: 28)
                 VStack(alignment: .leading, spacing: 3) {
                     if policy.isApplying {
@@ -125,9 +125,9 @@ struct RulesView: View {
                         let active = rule.isDomain ? policy.activeDomains.contains(rule.value) : policy.addressRulesActive
                         Text(active ? "Blocked" : "Pending")
                             .font(.caption2.weight(.semibold))
-                            .foregroundStyle(active ? .red : .orange)
+                            .foregroundStyle(active ? Palette.garnet : Palette.ember)
                             .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background((active ? Color.red : .orange).opacity(0.12), in: .capsule)
+                            .background((active ? Palette.garnet : Palette.ember).opacity(0.12), in: .capsule)
                     }
                     AccessibleSwitch(label: "Block \(rule.value)",
                                      isOn: Binding(get: { rule.isEnabled }, set: { policy.setEnabled(rule.id, $0) }))
@@ -164,7 +164,7 @@ struct AddBlockRuleSheet: View {
                     .onChange(of: text) { invalid = false }
                 if invalid {
                     Text(kind == 0 ? "Enter a domain name like example.com." : "Enter an IPv4 or IPv6 address.")
-                        .font(.caption).foregroundStyle(.red)
+                        .font(.caption).foregroundStyle(Palette.garnet)
                 }
                 Text(kind == 0
                      ? "Domain blocks apply to that exact name for all apps (sub-domains must be added separately). Apps that use their own DNS-over-HTTPS can bypass them."

@@ -12,7 +12,7 @@ struct AlertsView: View {
             if preferences.notificationsEnabled && alerts.authorization != .authorized && alerts.authorization != .provisional {
                 Section {
                     HStack {
-                        Image(systemName: "bell.slash").foregroundStyle(.orange)
+                        Image(systemName: "bell.slash").foregroundStyle(Palette.ember)
                         Text(alerts.authorization == .denied
                              ? "Notifications are turned off for Remon in System Settings. Alerts will still appear in the log below."
                              : "Allow notifications so alerts reach you while Remon is in the background.")

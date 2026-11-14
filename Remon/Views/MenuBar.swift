@@ -127,14 +127,14 @@ struct MenuBarPanel: View {
                         Text("\(ByteFormat.bytes(store.cycleUsage)) / \(ByteFormat.bytes(preferences.dataPlanLimit))").monospacedDigit()
                     }
                     ProgressView(value: min(fraction, 1))
-                        .tint(fraction >= 1 ? .red : (fraction >= 0.8 ? .orange : .green))
+                        .tint(Palette.quota(fraction))
                 }
                 .font(.callout)
             }
             if let ip = store.environment.publicIP {
                 HStack(spacing: 6) {
                     Image(systemName: store.environment.isVPNActive ? "lock.shield.fill" : "globe")
-                        .foregroundStyle(store.environment.isVPNActive ? .green : .secondary)
+                        .foregroundStyle(store.environment.isVPNActive ? AnyShapeStyle(Palette.jade) : AnyShapeStyle(.secondary))
                     Text(ip).monospaced()
                     Spacer()
                     Text(store.environment.publicGeo.map { "\($0.flag) \($0.org ?? $0.placeDescription)" } ?? "")
@@ -256,14 +256,10 @@ struct MenuBarPanel: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "waveform.path.ecg")
-                .font(.headline)
-                .foregroundStyle(LinearGradient(colors: [Accent.base, .teal], startPoint: .leading, endPoint: .trailing))
-                .accessibilityHidden(true)
-            Text("Remon").font(.headline)
+            RemonLogo().frame(height: 15)
             Spacer()
             HStack(spacing: 5) {
-                StatusDot(color: store.path.snapshot.isConnected ? .green : .red)
+                StatusDot(color: store.path.snapshot.isConnected ? Palette.jade : Palette.garnet)
                 Text(store.path.statusText)
             }
             .font(.caption)
@@ -301,9 +297,9 @@ struct SystemStrip: View {
     var body: some View {
         if let s = system.latest {
             HStack(spacing: 0) {
-                metric("CPU", percent(s.cpuTotal), s.cpuTotal, .blue)
-                metric("GPU", s.gpuUtilization.map(percent) ?? "—", s.gpuUtilization ?? 0, .purple)
-                metric("MEM", percent(s.memory.fraction), s.memory.fraction, .green)
+                metric("CPU", percent(s.cpuTotal), s.cpuTotal, Palette.azure)
+                metric("GPU", s.gpuUtilization.map(percent) ?? "—", s.gpuUtilization ?? 0, Palette.violet)
+                metric("MEM", percent(s.memory.fraction), s.memory.fraction, Palette.jade)
                 let temp = s.temperature(.cpu)
                 metric("TEMP", temp.map(celsius) ?? "—", min((temp ?? 0) / 100, 1), temperatureTint(temp))
             }

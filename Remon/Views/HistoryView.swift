@@ -52,7 +52,7 @@ struct HistoryView: View {
                     StatTile(title: range == .today ? "Busiest Hour" : "Busiest Day",
                              value: peak.map { ByteFormat.bytes($0.total) } ?? "—",
                              detail: peak.map { label(for: $0.start) },
-                             symbol: "chart.bar.fill", tint: .purple)
+                             symbol: "chart.bar.fill", tint: Palette.violet)
                 }
 
                 Card(range == .today ? "Usage by Hour" : "Usage by Day", symbol: "chart.bar.xaxis",
@@ -115,7 +115,7 @@ struct HistoryView: View {
             }
             if let hovered, let p = points.first(where: { Calendar.current.isDate($0.start, equalTo: hovered, toGranularity: range.unit) }) {
                 RuleMark(x: .value("Selected", p.start, unit: range.unit))
-                    .foregroundStyle(.gray.opacity(0.15))
+                    .foregroundStyle(Palette.chartHighlight)
                     .lineStyle(StrokeStyle(lineWidth: 24))
                     .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                         VStack(alignment: .leading, spacing: 2) {

@@ -31,7 +31,7 @@ private struct GeneralSettings: View {
                         if loginError != nil { launchAtLogin = preferences.launchAtLogin }
                     }
                 if let loginError {
-                    Text(loginError).font(.caption).foregroundStyle(.red)
+                    Text(loginError).font(.caption).foregroundStyle(Palette.garnet)
                 }
                 Toggle("Show Remon in the Dock", isOn: $preferences.showDockIcon)
                 Picker("Appearance", selection: $preferences.appearance) {
@@ -149,9 +149,9 @@ private struct MonitoringSettings: View {
             Section("Data Source") {
                 LabeledContent("Per-app statistics") {
                     switch store.sourceStatus {
-                    case .running: Label("nettop · running", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    case .running: Label("nettop · running", systemImage: "checkmark.circle.fill").foregroundStyle(Palette.jade)
                     case .starting: Text("Starting…")
-                    case .failed(let message): Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    case .failed(let message): Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Palette.ember)
                     }
                 }
                 LabeledContent("Interface counters", value: "Interface MIB (exact 64-bit)")
@@ -203,7 +203,7 @@ private struct NotificationSettings: View {
                 Toggle("Deliver alerts as macOS notifications", isOn: $preferences.notificationsEnabled)
                 LabeledContent("Permission") {
                     switch store.alerts.authorization {
-                    case .authorized, .provisional: Label("Allowed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    case .authorized, .provisional: Label("Allowed", systemImage: "checkmark.circle.fill").foregroundStyle(Palette.jade)
                     case .denied:
                         Button("Open System Settings…") {
                             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!)

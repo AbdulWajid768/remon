@@ -73,6 +73,10 @@ struct RemonApp: App {
         }
         .windowResizability(.contentSize)
         .defaultLaunchBehavior(.suppressed)
+        // Without this, opening the preview once makes macOS restore it on every later launch —
+        // and since the main window's own restoration is disabled, the app comes back showing
+        // nothing but the preview. The other suppressed window already opts out; this one didn't.
+        .restorationBehavior(.disabled)
 
         Settings {
             SettingsView()

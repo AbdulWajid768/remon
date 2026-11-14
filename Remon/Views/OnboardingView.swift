@@ -54,19 +54,18 @@ struct OnboardingView: View {
 
     private var welcome: some View {
         VStack(spacing: 18) {
-            Image(systemName: "waveform.path.ecg.rectangle.fill")
-                .font(.system(size: 64, weight: .regular))
-                .foregroundStyle(LinearGradient(colors: [Accent.base, .teal], startPoint: .topLeading, endPoint: .bottomTrailing))
-                .symbolEffect(.pulse, options: .repeating)
-            Text("Welcome to Remon").font(.largeTitle.weight(.bold))
+            RemonLogo(style: AnyShapeStyle(LinearGradient(colors: [Accent.base, Palette.teal],
+                                                          startPoint: .topLeading, endPoint: .bottomTrailing)))
+                .frame(height: 62)
+            Text("Welcome").font(.largeTitle.weight(.bold))
             Text("See every app talking to the network — how much, to whom, and where in the world — right from your menu bar.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 440)
             VStack(alignment: .leading, spacing: 14) {
                 feature("chart.xyaxis.line", Accent.base, "Live per-app bandwidth", "Download and upload for every process, updated every second.")
-                feature("globe.americas.fill", .green, "Every connection, explained", "Hostnames, countries, owners and a label for what each destination is.")
-                feature("bell.badge.fill", .orange, "Calm, useful alerts", "Know when something unusual happens — without a prompt for every packet.")
+                feature("globe.americas.fill", Palette.jade, "Every connection, explained", "Hostnames, countries, owners and a label for what each destination is.")
+                feature("bell.badge.fill", Palette.ember, "Calm, useful alerts", "Know when something unusual happens — without a prompt for every packet.")
             }
             .padding(.top, 8)
         }
@@ -78,7 +77,7 @@ struct OnboardingView: View {
         return VStack(spacing: 18) {
             Image(systemName: "hand.raised.fill")
                 .font(.system(size: 52))
-                .foregroundStyle(.teal)
+                .foregroundStyle(Palette.teal)
                 .symbolEffect(.bounce, value: page)
             Text("Your data stays on your Mac").font(.title.weight(.bold))
             Text("Remon reads traffic statistics from macOS. It never inspects the contents of your traffic, and history is stored only on this Mac.")
@@ -105,7 +104,7 @@ struct OnboardingView: View {
         return VStack(spacing: 18) {
             Image(systemName: "menubar.arrow.up.rectangle")
                 .font(.system(size: 52))
-                .foregroundStyle(.indigo)
+                .foregroundStyle(Palette.indigo)
                 .symbolEffect(.bounce, value: page)
             Text("Always one glance away").font(.title.weight(.bold))
             Text("Remon lives in your menu bar with a live graph. Close the window any time — monitoring continues.")
@@ -118,14 +117,14 @@ struct OnboardingView: View {
                         if loginError != nil { launchAtLogin = preferences.launchAtLogin }
                     }
                 if let loginError {
-                    Text(loginError).font(.caption).foregroundStyle(.red)
+                    Text(loginError).font(.caption).foregroundStyle(Palette.garnet)
                 }
                 HStack {
                     Text("Notifications")
                     Spacer()
                     switch store.alerts.authorization {
                     case .authorized, .provisional:
-                        Label("Allowed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        Label("Allowed", systemImage: "checkmark.circle.fill").foregroundStyle(Palette.jade)
                     case .denied:
                         Text("Turned off in System Settings").foregroundStyle(.secondary)
                     default:

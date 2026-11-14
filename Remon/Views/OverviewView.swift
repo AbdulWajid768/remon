@@ -38,14 +38,14 @@ struct OverviewView: View {
                      detail: "Peak \(preferences.rate(store.peakOut))", symbol: "arrow.up.circle.fill", tint: Theme.upload)
             StatTile(title: "Today", value: ByteFormat.bytes(store.todayIn + store.todayOut),
                      detail: "↓ \(ByteFormat.bytes(store.todayIn))  ↑ \(ByteFormat.bytes(store.todayOut))",
-                     symbol: "calendar", tint: .purple)
+                     symbol: "calendar", tint: Palette.violet)
             StatTile(title: "This Session", value: ByteFormat.bytes(store.sessionIn + store.sessionOut),
                      detail: "Since \(store.startedAt.formatted(date: .omitted, time: .shortened))",
-                     symbol: "clock.arrow.circlepath", tint: .teal)
+                     symbol: "clock.arrow.circlepath", tint: Palette.teal)
             StatTile(title: "Connections", value: "\(store.activeConnectionCount)",
-                     detail: "\(store.onlineAppCount) apps online", symbol: "point.3.filled.connected.trianglepath.dotted", tint: .green)
+                     detail: "\(store.onlineAppCount) apps online", symbol: "point.3.filled.connected.trianglepath.dotted", tint: Palette.jade)
             StatTile(title: "Unattributed", value: ByteFormat.bytes(store.unattributedIn + store.unattributedOut),
-                     detail: "Kernel total minus per-app", symbol: "questionmark.circle", tint: .gray)
+                     detail: "Kernel total minus per-app", symbol: "questionmark.circle", tint: Palette.slate)
         }
     }
 
@@ -67,7 +67,7 @@ struct SourceFailureBanner: View {
     var message: String
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.amber)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Per-app monitoring is unavailable").font(.headline)
                 Text("\(message) Whole-machine throughput from interface counters is still live. Remon retries automatically.")
@@ -76,8 +76,8 @@ struct SourceFailureBanner: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.yellow.opacity(0.14), in: .rect(cornerRadius: 12, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.yellow.opacity(0.3), lineWidth: 0.5) }
+        .background(Palette.amber.opacity(0.14), in: .rect(cornerRadius: 12, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.amber.opacity(0.3), lineWidth: 0.5) }
     }
 }
 
@@ -147,10 +147,10 @@ struct NetworkCard: View {
         Card("Network", symbol: snapshot.primaryKind?.symbol ?? "network", summary: AnyView(CardSummary(summary))) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
-                    StatusDot(color: snapshot.isConnected ? .green : .red)
+                    StatusDot(color: snapshot.isConnected ? Palette.jade : Palette.garnet)
                     Text(snapshot.isConnected ? "Connected" : "Offline").font(.callout.weight(.medium))
-                    if snapshot.isExpensive { pill("Expensive", .orange) }
-                    if snapshot.isConstrained { pill("Low Data Mode", .yellow) }
+                    if snapshot.isExpensive { pill("Expensive", Palette.ember) }
+                    if snapshot.isConstrained { pill("Low Data Mode", Palette.amber) }
                     Spacer()
                     Text([snapshot.supportsIPv4 ? "IPv4" : nil, snapshot.supportsIPv6 ? "IPv6" : nil].compactMap { $0 }.joined(separator: " · "))
                         .font(.caption).foregroundStyle(.secondary)
@@ -158,7 +158,7 @@ struct NetworkCard: View {
                 if let ip = store.environment.publicIP {
                     HStack(spacing: 6) {
                         Image(systemName: store.environment.isVPNActive ? "lock.shield.fill" : "globe")
-                            .foregroundStyle(store.environment.isVPNActive ? .green : .secondary)
+                            .foregroundStyle(store.environment.isVPNActive ? AnyShapeStyle(Palette.jade) : AnyShapeStyle(.secondary))
                             .frame(width: 18)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(ip).font(.callout.monospaced()).textSelection(.enabled)
@@ -167,7 +167,7 @@ struct NetworkCard: View {
                                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Spacer()
-                        if store.environment.isVPNActive { pill("VPN", .green) }
+                        if store.environment.isVPNActive { pill("VPN", Palette.jade) }
                     }
                 }
                 if let wifi = store.environment.wifi {
@@ -284,7 +284,7 @@ struct DataPlanCard: View {
         let fraction = Double(store.cycleUsage) / limit
         let cycle = store.billingCycle
         let projected = cycle.projectedUsage(used: store.cycleUsage, at: Date())
-        let tint: Color = fraction >= 1 ? .red : (fraction >= 0.8 ? .orange : .green)
+        let tint: Color = Palette.quota(fraction)
         Card("Data Plan", symbol: "chart.pie",
              summary: AnyView(CardSummary(["\(ByteFormat.bytes(store.cycleUsage)) of \(ByteFormat.bytes(limit)) (\(Int((fraction * 100).rounded()))%)",
                                            "resets in \(daysLeft(cycle)) days"]))) {
@@ -300,7 +300,7 @@ struct DataPlanCard: View {
                     Text("Cycle \(cycle.start.formatted(.dateTime.month().day())) – \(cycle.end.formatted(.dateTime.month().day())) · resets in \(daysLeft(cycle)) days")
                         .font(.callout).foregroundStyle(.secondary)
                     Text("Projected \(ByteFormat.bytes(projected)) by cycle end" + (Double(projected) > limit ? " — over your limit" : ""))
-                        .font(.callout).foregroundStyle(Double(projected) > limit ? .orange : .secondary)
+                        .font(.callout).foregroundStyle(Double(projected) > limit ? AnyShapeStyle(Palette.ember) : AnyShapeStyle(.secondary))
                 }
                 Spacer()
                 ProgressView(value: cycle.fractionElapsed(at: Date())) {

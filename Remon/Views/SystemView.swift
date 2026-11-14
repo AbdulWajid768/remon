@@ -13,11 +13,11 @@ struct SystemView: View {
                     tiles(s)
                     SectionHeading("Processor", subtitle: "CPU and GPU load over the last few minutes, and every core.")
                     HStack(alignment: .top, spacing: 12) {
-                        Card("CPU & GPU Load", symbol: "cpu", accessory: AnyView(ChartLegend(items: [("CPU", .blue), ("GPU", .purple)])),
+                        Card("CPU & GPU Load", symbol: "cpu", accessory: AnyView(ChartLegend(items: [("CPU", Palette.azure), ("GPU", Palette.violet)])),
                              summary: AnyView(CardSummary(["CPU \(percent(s.cpuTotal))", "GPU \(s.gpuUtilization.map(percent) ?? "—")"]))) {
                             loadChart.frame(height: 160)
                         }
-                        Card("Temperatures", symbol: "thermometer.medium", accessory: AnyView(ChartLegend(items: [("CPU", .blue), ("GPU", .purple)])),
+                        Card("Temperatures", symbol: "thermometer.medium", accessory: AnyView(ChartLegend(items: [("CPU", Palette.azure), ("GPU", Palette.violet)])),
                              summary: AnyView(CardSummary(["CPU \(s.temperature(.cpu).map(celsius) ?? "—")", "GPU \(s.temperature(.gpu).map(celsius) ?? "—")"]))) {
                             temperatureChart.frame(height: 160)
                         }
@@ -50,12 +50,12 @@ struct SystemView: View {
     private func tiles(_ s: SystemSnapshot) -> some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 12) {
             StatTile(title: "CPU", value: percent(s.cpuTotal),
-                     detail: "User \(percent(s.cpuUser)) · System \(percent(s.cpuSystem))", symbol: "cpu", tint: .blue)
+                     detail: "User \(percent(s.cpuUser)) · System \(percent(s.cpuSystem))", symbol: "cpu", tint: Palette.azure)
             StatTile(title: "GPU", value: s.gpuUtilization.map(percent) ?? "—",
-                     detail: s.gpuMemory.map { "\(ByteFormat.bytes($0)) in use" }, symbol: "cube.transparent", tint: .purple)
+                     detail: s.gpuMemory.map { "\(ByteFormat.bytes($0)) in use" }, symbol: "cube.transparent", tint: Palette.violet)
             StatTile(title: "Memory", value: percent(s.memory.fraction),
                      detail: "\(ByteFormat.bytes(s.memory.used)) of \(ByteFormat.bytes(s.memory.total)) · \(s.memory.pressure.rawValue) pressure",
-                     symbol: "memorychip", tint: s.memory.pressure == .normal ? .green : (s.memory.pressure == .warning ? .yellow : .red))
+                     symbol: "memorychip", tint: pressureTint(s.memory.pressure))
             StatTile(title: "CPU Temperature", value: s.temperature(.cpu).map(celsius) ?? "—",
                      detail: s.hottest(.cpu).map { "Hottest \(celsius($0)) · peak \(celsius(system.peakCPUTemperature))" },
                      symbol: "thermometer.medium", tint: temperatureTint(s.temperature(.cpu)))
@@ -64,7 +64,7 @@ struct SystemView: View {
             StatTile(title: "Power", value: s.systemPowerWatts.map { String(format: "%.1f W", $0) } ?? "—",
                      detail: s.battery.map { battery in
                          "\(Int(battery.percent * 100))% · \(battery.isCharging ? "charging" : (battery.onAC ? "on AC" : "on battery"))"
-                     }, symbol: "bolt.fill", tint: .orange)
+                     }, symbol: "bolt.fill", tint: Palette.ember)
         }
     }
 
@@ -72,13 +72,13 @@ struct SystemView: View {
         Chart {
             ForEach(system.history) { p in
                 AreaMark(x: .value("Time", p.date), y: .value("Load", p.cpu * 100), series: .value("Series", "CPU"))
-                    .foregroundStyle(LinearGradient(colors: [.blue.opacity(0.35), .blue.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                    .foregroundStyle(LinearGradient(colors: [Palette.azure.opacity(0.35), Palette.azure.opacity(0.02)], startPoint: .top, endPoint: .bottom))
                     .interpolationMethod(.monotone)
                 LineMark(x: .value("Time", p.date), y: .value("Load", p.cpu * 100), series: .value("Series", "CPU"))
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Palette.azure)
                     .interpolationMethod(.monotone)
                 LineMark(x: .value("Time", p.date), y: .value("Load", p.gpu * 100), series: .value("Series", "GPU"))
-                    .foregroundStyle(.purple)
+                    .foregroundStyle(Palette.violet)
                     .interpolationMethod(.monotone)
             }
         }
@@ -96,11 +96,11 @@ struct SystemView: View {
                 if let t = p.cpuTemperature {
                     // Same CPU/GPU colours as the load chart next to it.
                     LineMark(x: .value("Time", p.date), y: .value("°C", t), series: .value("Series", "CPU"))
-                        .foregroundStyle(.blue).interpolationMethod(.monotone)
+                        .foregroundStyle(Palette.azure).interpolationMethod(.monotone)
                 }
                 if let t = p.gpuTemperature {
                     LineMark(x: .value("Time", p.date), y: .value("°C", t), series: .value("Series", "GPU"))
-                        .foregroundStyle(.purple).interpolationMethod(.monotone)
+                        .foregroundStyle(Palette.violet).interpolationMethod(.monotone)
                 }
             }
         }
@@ -123,12 +123,14 @@ struct SystemView: View {
 func percent(_ fraction: Double) -> String { "\(Int((fraction * 100).rounded()))%" }
 func celsius(_ value: Double) -> String { "\(Int(value.rounded())) °C" }
 
-func temperatureTint(_ value: Double?) -> Color {
-    guard let value else { return .gray }
-    if value >= 90 { return .red }
-    if value >= 75 { return .orange }
-    if value >= 60 { return .yellow }
-    return .green
+func temperatureTint(_ value: Double?) -> Color { Palette.load(value) }
+
+func pressureTint(_ pressure: MemoryReading.Pressure) -> Color {
+    switch pressure {
+    case .normal: Palette.jade
+    case .warning: Palette.amber
+    default: Palette.garnet
+    }
 }
 
 private struct CoresCard: View {
@@ -152,7 +154,7 @@ private struct CoresCard: View {
                             ZStack(alignment: .bottom) {
                                 RoundedRectangle(cornerRadius: 4).fill(.quaternary.opacity(0.6))
                                 RoundedRectangle(cornerRadius: 4)
-                                    .fill((isEfficiency ? Color.teal : Color.blue).gradient)
+                                    .fill((isEfficiency ? Palette.teal : Palette.azure).gradient)
                                     .frame(height: max(2, geo.size.height * load))
                             }
                         }
@@ -171,8 +173,8 @@ private struct MemoryCard: View {
     var memory: MemoryReading
 
     var body: some View {
-        let parts: [(String, UInt64, Color)] = [("App", memory.app, .blue), ("Wired", memory.wired, .orange),
-                                                 ("Compressed", memory.compressed, .purple), ("Cached", memory.cached, .gray)]
+        let parts: [(String, UInt64, Color)] = [("App", memory.app, Palette.azure), ("Wired", memory.wired, Palette.ember),
+                                                 ("Compressed", memory.compressed, Palette.violet), ("Cached", memory.cached, Palette.slate)]
         Card("Memory", symbol: "memorychip",
              summary: AnyView(CardSummary(["\(ByteFormat.bytes(memory.used)) of \(ByteFormat.bytes(memory.total)) used", "\(memory.pressure.rawValue) pressure"]))) {
             VStack(alignment: .leading, spacing: 10) {
@@ -206,7 +208,7 @@ private struct MemoryCard: View {
                     GridRow {
                         Text("Pressure")
                         Text(memory.pressure.rawValue)
-                            .foregroundStyle(memory.pressure == .normal ? .green : (memory.pressure == .warning ? .yellow : .red))
+                            .foregroundStyle(pressureTint(memory.pressure))
                     }
                 }
                 .font(.callout)
@@ -234,7 +236,7 @@ private struct FansPowerCard: View {
                 }
                 if let watts = snapshot.systemPowerWatts {
                     HStack {
-                        Image(systemName: "bolt.fill").foregroundStyle(.orange)
+                        Image(systemName: "bolt.fill").foregroundStyle(Palette.ember)
                         Text("System power")
                         Spacer()
                         Text(String(format: "%.1f W", watts)).monospacedDigit()
@@ -260,9 +262,9 @@ private struct DiskCard: View {
                     }
                 }
                 HStack {
-                    Label(ByteFormat.rate(snapshot.diskReadRate), systemImage: "arrow.down.doc").foregroundStyle(.blue)
+                    Label(ByteFormat.rate(snapshot.diskReadRate), systemImage: "arrow.down.doc").foregroundStyle(Palette.azure)
                     Spacer()
-                    Label(ByteFormat.rate(snapshot.diskWriteRate), systemImage: "arrow.up.doc").foregroundStyle(.orange)
+                    Label(ByteFormat.rate(snapshot.diskWriteRate), systemImage: "arrow.up.doc").foregroundStyle(Palette.ember)
                 }
                 .font(.callout.monospacedDigit())
             }
@@ -331,7 +333,7 @@ private struct BatteryCard: View {
                         Text("\(minutes / 60)h \(minutes % 60)m \(battery.isCharging ? "to full" : "left")").foregroundStyle(.secondary)
                     }
                 }
-                ProgressView(value: battery.percent).tint(battery.percent < 0.2 ? .red : .green)
+                ProgressView(value: battery.percent).tint(battery.percent < 0.2 ? Palette.garnet : Palette.jade)
                 if let maximum = battery.maximumCapacity {
                     DetailRow(label: "Maximum capacity", value: "\(Int((maximum * 100).rounded()))%" + (battery.condition.map { " · \($0)" } ?? ""))
                 }

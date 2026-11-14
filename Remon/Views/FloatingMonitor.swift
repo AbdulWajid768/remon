@@ -11,7 +11,7 @@ struct FloatingMonitor: View {
                 rate(store.currentIn, "arrow.down", Theme.download)
                 rate(store.currentOut, "arrow.up", Theme.upload)
                 Spacer(minLength: 0)
-                StatusDot(color: store.path.snapshot.isConnected ? .green : .red)
+                StatusDot(color: store.path.snapshot.isConnected ? Palette.jade : Palette.garnet)
             }
             ThroughputChart(points: Array(store.throughput.suffix(90)), window: 90, showsAxes: false, interactive: false)
                 .frame(height: 46)

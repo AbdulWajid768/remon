@@ -9,11 +9,11 @@ import SwiftUI
 enum Theme {
     static func colors(for theme: ColorTheme) -> (download: Color, upload: Color) {
         switch theme {
-        case .classic: (.blue, .orange)
-        case .ocean: (.teal, .indigo)
-        case .sunset: (.pink, .yellow)
-        case .forest: (.green, .mint)
-        case .graphite: (.primary, .gray)
+        case .classic: (Palette.azure, Palette.ember)
+        case .ocean: (Palette.teal, Palette.indigo)
+        case .sunset: (Palette.plum, Palette.amber)
+        case .forest: (Palette.jade, Palette.sage)
+        case .graphite: (.primary, Palette.slate)
         }
     }
 
@@ -393,17 +393,26 @@ extension View {
     }
 }
 
-/// Row pinned under the toolbar on sections with page-level controls: filters and actions on
-/// the left, status on the right. No background of its own, so the page reads as one surface.
+/// Row pinned under the toolbar on sections with page-level controls: search first, then the
+/// section's own filters and actions, with status on the right. No background of its own, so the
+/// page reads as one surface. Sections that can be searched get the field here automatically —
+/// it is a page-level control like the rest of this row, and the toolbar can't host it (see
+/// `RemonSearchField`).
 struct PageBar<Leading: View, Trailing: View>: View {
+    @Environment(MonitorStore.self) private var store
     @ViewBuilder var leading: Leading
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
         HStack(spacing: 12) {
+            if store.section.hasSearch { RemonSearchField() }
             leading
-            Spacer(minLength: 12)
+            Spacer(minLength: 8)
+            // The count must never wrap: squeezed between the search field and the window edge it
+            // used to break one character per line.
             trailing
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .font(.callout)
         .padding(.horizontal, 16).padding(.top, 2).padding(.bottom, 8)
@@ -651,7 +660,7 @@ struct SignatureBadge: View {
 
     var body: some View {
         if let info {
-            let tint: Color = info.status.isConcerning ? .orange : (info.status == .invalid ? .red : .secondary)
+            let tint: Color = info.status.isConcerning ? Palette.ember : (info.status == .invalid ? Palette.garnet : .secondary)
             Label(compact ? "" : info.status.rawValue, systemImage: info.status.symbol)
                 .labelStyle(compact ? AnyLabelStyle(.iconOnly) : AnyLabelStyle(.titleAndIcon))
                 .font(.caption)

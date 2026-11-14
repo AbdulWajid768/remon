@@ -33,14 +33,14 @@ enum DestinationCategory: String, CaseIterable, Sendable {
 
     var tint: Color {
         switch self {
-        case .local: .green
-        case .apple: .gray
-        case .telemetry: .purple
-        case .advertising: .red
-        case .update: .teal
-        case .cloudflare, .akamai, .fastly, .cdn: .cyan
+        case .local: Palette.jade
+        case .apple: Palette.slate
+        case .telemetry: Palette.violet
+        case .advertising: Palette.garnet
+        case .update: Palette.teal
+        case .cloudflare, .akamai, .fastly, .cdn: Palette.sky
         case .unknown: .secondary
-        default: .indigo
+        default: Palette.indigo
         }
     }
 

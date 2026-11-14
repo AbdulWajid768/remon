@@ -246,7 +246,10 @@ func onboarding() {
     print("Onboarding")
     guard let w = mainWindow, let s = sheet(of: w) else { check(false, "onboarding sheet is shown on first launch"); return }
     check(true, "onboarding sheet is shown on first launch")
-    check(s.texts().contains("Welcome to Remon"), "welcome page has a title")
+    // The wordmark carries the name, so the heading is just "Welcome"; check both are there.
+    let welcomeTexts = s.texts()
+    check(welcomeTexts.contains("Welcome"), "welcome page has a title")
+    check(s.first(maxDepth: 12, { $0.label == "Remon" }) != nil, "welcome page shows the Remon wordmark")
     screenshot("01-onboarding-welcome")
     s.button("Continue")?.press(); wait(0.8)
     check(sheet(of: w)?.texts().contains("Your data stays on your Mac") == true, "Continue goes to the privacy page")
@@ -254,7 +257,7 @@ func onboarding() {
     check(toggles.count >= 2, "privacy page has hostname and location toggles (found \(toggles.count))")
     screenshot("02-onboarding-privacy")
     sheet(of: w)?.button("Back")?.press(); wait(0.6)
-    check(sheet(of: w)?.texts().contains("Welcome to Remon") == true, "Back returns to the welcome page")
+    check(sheet(of: w)?.texts().contains("Welcome") == true, "Back returns to the welcome page")
     sheet(of: w)?.button("Continue")?.press(); wait(0.6)
     sheet(of: w)?.button("Continue")?.press(); wait(0.8)
     check(sheet(of: w)?.button("Start Monitoring") != nil, "last page offers Start Monitoring")

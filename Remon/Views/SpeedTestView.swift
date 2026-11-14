@@ -86,7 +86,7 @@ private struct SpeedTestBar: View {
                 }
             } else if let error = store.speedTestError {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange).lineLimit(1).truncationMode(.tail)
+                    .foregroundStyle(Palette.ember).lineLimit(1).truncationMode(.tail)
             }
         } trailing: {
             if let latest, !running {
@@ -127,10 +127,10 @@ private struct SpeedTiles: View {
             StatTile(title: "Upload", value: upload.map(SpeedFormat.text) ?? "—", detail: uploadNote?.0,
                      symbol: "arrow.up.circle.fill", tint: Theme.upload, detailTint: uploadNote?.1)
             StatTile(title: "Responsiveness", value: rpm.map { "\(Int($0)) RPM" } ?? "—", detail: rpmNote?.0,
-                     symbol: "bolt.horizontal.circle.fill", tint: .purple, detailTint: rpmNote?.1)
+                     symbol: "bolt.horizontal.circle.fill", tint: Palette.violet, detailTint: rpmNote?.1)
                 .help("Round trips per minute while the connection is busy. Higher is better; low values mean calls and games lag when something else is downloading.")
             StatTile(title: "Idle Latency", value: rtt.map { String(format: "%.0f ms", $0) } ?? "—", detail: rttNote?.0,
-                     symbol: "timer.circle.fill", tint: .teal, detailTint: rttNote?.1)
+                     symbol: "timer.circle.fill", tint: Palette.teal, detailTint: rttNote?.1)
                 .help("Round-trip time to Apple's test servers on an otherwise idle connection.")
         }
         .animation(.smooth, value: download)
@@ -141,7 +141,7 @@ private struct SpeedTiles: View {
         guard let now, let before else { return nil }
         let delta = now - before
         guard abs(delta) >= 0.05e6 else { return ("Same as last test", .secondary) }
-        return ("\(delta > 0 ? "+" : "−")\(SpeedFormat.text(abs(delta))) vs last test", delta > 0 ? .green : .orange)
+        return ("\(delta > 0 ? "+" : "−")\(SpeedFormat.text(abs(delta))) vs last test", delta > 0 ? Palette.jade : Palette.ember)
     }
 }
 
@@ -233,7 +233,7 @@ private struct SuitabilityRow: View {
                 ForEach(checks, id: \.name) { check in
                     HStack(spacing: 6) {
                         Image(systemName: check.ok ? "checkmark.circle.fill" : "xmark.circle")
-                            .foregroundStyle(check.ok ? AnyShapeStyle(.green) : AnyShapeStyle(.tertiary))
+                            .foregroundStyle(check.ok ? AnyShapeStyle(Palette.jade) : AnyShapeStyle(.tertiary))
                         Label(check.name, systemImage: check.symbol)
                             .labelStyle(.titleOnly)
                             .foregroundStyle(check.ok ? .primary : .secondary)
@@ -266,18 +266,18 @@ enum SpeedFormat {
 
     static func latencyRating(_ ms: Double) -> (String, Color) {
         switch ms {
-        case ..<30: ("Excellent", .green)
-        case ..<60: ("Good", .green)
-        case ..<120: ("Fair", .yellow)
-        default: ("Poor", .orange)
+        case ..<30: ("Excellent", Palette.jade)
+        case ..<60: ("Good", Palette.sage)
+        case ..<120: ("Fair", Palette.amber)
+        default: ("Poor", Palette.ember)
         }
     }
 
     static func responsivenessColor(_ rating: String) -> Color {
         switch rating {
-        case "High": .green
-        case "Medium": .yellow
-        case "Low": .orange
+        case "High": Palette.jade
+        case "Medium": Palette.amber
+        case "Low": Palette.ember
         default: .secondary
         }
     }
@@ -351,7 +351,7 @@ struct SpeedGauge: View {
         VStack(spacing: 0) {
             HStack(spacing: 5) {
                 if running {
-                    Circle().fill(.red).frame(width: 6, height: 6)
+                    Circle().fill(Palette.garnet).frame(width: 6, height: 6)
                     Text("LIVE")
                 } else {
                     Image(systemName: "arrow.down")
@@ -444,7 +444,7 @@ private struct SpeedHistoryChart: View {
             }
             if let hovered, let r = recent.first(where: { $0.id.uuidString == hovered }) {
                 RuleMark(x: .value("Test", hovered))
-                    .foregroundStyle(.gray.opacity(0.12))
+                    .foregroundStyle(Palette.chartHighlight)
                     .lineStyle(StrokeStyle(lineWidth: 44))
                     .annotation(position: .top, spacing: 0, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                         VStack(alignment: .leading, spacing: 3) {
