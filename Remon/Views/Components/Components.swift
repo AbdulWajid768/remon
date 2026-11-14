@@ -351,17 +351,56 @@ struct ThroughputChart: View {
 /// through, blurred, like Finder's sidebar. Every section sits on this; cards and tiles are
 /// frosted panels on top of it.
 struct WindowGlass: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        // HUD lets most of the desktop through while staying readable; `underWindowBackground`
-        // is nearly opaque and reads as plain grey.
-        view.material = .hudWindow
-        view.blendingMode = .behindWindow
-        view.state = .active
-        return view
-    }
+    /// In full screen the only thing behind the window is the wallpaper, and the HUD material
+    /// lets so much of it through that the whole page takes on its colour: a teal desktop made a
+    /// teal app. There is nothing worth seeing through to, so the body stops looking through the
+    /// window and settles on the neutral grey it has over a dark desktop; the wallpaper is left
+    /// to the sidebar panel, where the system draws it the way Finder does.
+    var isFullScreen = false
 
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+    func makeNSView(context: Context) -> Backdrop { Backdrop() }
+
+    func updateNSView(_ view: Backdrop, context: Context) { view.isFullScreen = isFullScreen }
+
+    /// The glass over a flat colour. In a window the colour is clear and the glass blends with
+    /// whatever is behind the window. In full screen the glass blends within the window instead,
+    /// over a neutral grey pitched where a dark desktop would land it, so the page and the cards
+    /// on it keep the contrast they have in a window. Light mode needs no backdrop: the window's
+    /// own white already puts the material where it sits in a window.
+    final class Backdrop: NSView {
+        var isFullScreen = false { didSet { if isFullScreen != oldValue { refresh() } } }
+
+        private let glass = NSVisualEffectView()
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            // HUD lets most of the desktop through while staying readable; `underWindowBackground`
+            // is nearly opaque and reads as plain grey.
+            glass.material = .hudWindow
+            glass.state = .active
+            glass.frame = bounds
+            glass.autoresizingMask = [.width, .height]
+            addSubview(glass)
+            refresh()
+        }
+
+        @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+        // The backdrop is an appearance-dependent colour resolved to a CGColor, so it has to be
+        // resolved again when the appearance flips.
+        override func viewDidChangeEffectiveAppearance() {
+            super.viewDidChangeEffectiveAppearance()
+            refresh()
+        }
+
+        private func refresh() {
+            glass.blendingMode = isFullScreen ? .withinWindow : .behindWindow
+            guard isFullScreen else { layer?.backgroundColor = nil; return }
+            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            layer?.backgroundColor = dark ? NSColor(rgb: 0x5C5C5C).cgColor : nil
+        }
+    }
 }
 
 /// Frosted panel used by every card and tile: a material fill the window glass shows through,

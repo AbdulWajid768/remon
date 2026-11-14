@@ -27,6 +27,7 @@ struct MainView: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             Sidebar()
                 .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
+                .toolbar { SidebarToolbar(isFullScreen: isFullScreen) }
         } detail: {
             // One inspector for the whole detail column. Per-section inspectors were recreated on every
             // section switch and could come back hidden while the toggle still said "shown"; attaching
@@ -40,7 +41,7 @@ struct MainView: View {
                 .animation(.snappy(duration: 0.25), value: collapsedGutter)
                 .frame(minWidth: 340)
                 // The translucent window body every section sits on; see `WindowGlass`.
-                .background(WindowGlass().ignoresSafeArea())
+                .background(WindowGlass(isFullScreen: isFullScreen).ignoresSafeArea())
                 .inspector(isPresented: inspectorBinding) {
                     SectionInspector()
                         .inspectorColumnWidth(min: 280, ideal: 320, max: 440)
@@ -69,7 +70,13 @@ struct MainView: View {
         }
         .environment(searchUI)
         .background { FullScreenReporter(isFullScreen: $isFullScreen) }
-        .toolbar { MainToolbar(isFullScreen: isFullScreen) }
+        .toolbar { MainToolbar() }
+        // In a window the title bar is transparent and the glass body runs up to the top edge. In
+        // full screen AppKit gives the toolbar a material of its own, a darker strip across the
+        // detail column with a grey slab over the sidebar, and the window reads as three panels
+        // stacked at the top. Nothing scrolls under the toolbar that needs separating, so keep the
+        // body continuous.
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .sheet(isPresented: $store.showOnboarding) {
             OnboardingView()
                 .interactiveDismissDisabled()
@@ -196,33 +203,40 @@ struct SidebarFooter: View {
     }
 }
 
-struct MainToolbar: ToolbarContent {
-    @Environment(MonitorStore.self) private var store
+/// The sidebar column's share of the toolbar. Full screen strips the window of its traffic
+/// lights, which leaves the sidebar's top block empty and the top of the window with no sign of
+/// which app it is. The toolbar strip is the only thing that can draw in that band — a SwiftUI
+/// overlay is clipped to the column's frame, which starts below it — so the wordmark goes here,
+/// where the traffic lights were. It stays out of the detail column so the section title keeps
+/// its place over the content.
+struct SidebarToolbar: ToolbarContent {
     var isFullScreen = false
 
     private var logo: some View {
         RemonLogo()
             .frame(height: 15)
-            .padding(.trailing, 2)
+            .padding(.leading, 4)
             .accessibilityHidden(true)
     }
 
     var body: some ToolbarContent {
-        // Full screen strips the window of its traffic lights and title bar, so the top of the
-        // window carries no sign of which app it is. The toolbar strip is also the only thing that
-        // can draw in that band — a SwiftUI overlay is clipped to the column's frame, which starts
-        // below it — so the mark goes here, between the sidebar toggle and the section title.
         if isFullScreen {
             if #available(macOS 26, *) {
                 // macOS 26 gives every toolbar item a glass capsule, which would make the logo
                 // look like a button you can press. The mark is decoration, so drop it.
-                ToolbarItem(placement: .navigation) { logo }
+                ToolbarItem(placement: .principal) { logo }
                     .sharedBackgroundVisibility(.hidden)
             } else {
-                ToolbarItem(placement: .navigation) { logo }
+                ToolbarItem(placement: .principal) { logo }
             }
         }
+    }
+}
 
+struct MainToolbar: ToolbarContent {
+    @Environment(MonitorStore.self) private var store
+
+    var body: some ToolbarContent {
         // App-wide actions, always in the same order and in one glass group. A menu's indicator
         // gets a capsule of its own on macOS 26, so Export hides it to stay in the group.
         ToolbarItemGroup(placement: .primaryAction) {
@@ -270,7 +284,7 @@ struct MainToolbar: ToolbarContent {
 }
 
 /// Launch arguments used for unattended screenshots and demos:
-/// `-openSettings YES`, `-quickOpen YES`, `-previewMenuPanel YES`.
+/// `-openSettings YES`, `-quickOpen YES`, `-previewMenuPanel YES`, `-fullScreen YES`.
 private struct DemoLaunchHooks: ViewModifier {
     @Environment(MonitorStore.self) private var store
     @Environment(\.openSettings) private var openSettings
@@ -283,6 +297,13 @@ private struct DemoLaunchHooks: ViewModifier {
             if defaults.bool(forKey: "openSettings") { openSettings() }
             if defaults.bool(forKey: "quickOpen") { store.isQuickOpenPresented = true }
             if defaults.bool(forKey: "previewMenuPanel") { openWindow(id: "menu-preview") }
+            // `-fullScreen YES`: the window's chrome differs in full screen (no traffic lights, no
+            // title bar), so the screenshots cover it too.
+            if defaults.bool(forKey: "fullScreen"),
+               let window = NSApp.windows.first(where: { $0.isVisible && $0.collectionBehavior.contains(.fullScreenPrimary) }),
+               !window.styleMask.contains(.fullScreen) {
+                window.toggleFullScreen(nil)
+            }
         }
     }
 }

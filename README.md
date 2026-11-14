@@ -162,6 +162,7 @@ written back, so a demo run leaves real preferences alone.
 | `-skipOnboarding YES` / `-showOnboarding YES` | Suppress or force the welcome sheet |
 | `-selectTop YES` | Auto-select the top app/connection so the inspector is populated |
 | `-sidebarCollapsed YES` / `NO` | Force the sidebar hidden or shown, rather than restoring the last state |
+| `-fullScreen YES` | Enter full screen once the window is up |
 | `-quickOpen YES` / `-openSettings YES` / `-previewMenuPanel YES` | Open Quick Open, Settings or the menu bar panel in a window |
 | `-redactIdentity YES` | Replace this Mac's public IP, network owner, place and Wi-Fi name with documentation placeholders |
 | `-appearance Light` | Override the appearance for one launch |
