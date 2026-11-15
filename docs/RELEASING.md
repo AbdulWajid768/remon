@@ -96,6 +96,14 @@ one is ever offered a download that doesn't exist yet.
 Sparkle compares the **build number** (`CFBundleVersion`), not the marketing version, so the build
 number must always go up. The script handles that; don't edit it by hand.
 
+The script also starts the built app and fails if it exits straight away. That check exists because
+`codesign --verify` and `spctl --assess` both pass on a build that cannot launch: under Hardened
+Runtime, library validation only loads code whose Team ID matches the app's, and an ad-hoc signed
+build has no Team ID, so the embedded `Sparkle.framework` is refused and the app aborts in dyld.
+[Config/Remon.entitlements](../Config/Remon.entitlements) disables library validation to make
+ad-hoc builds runnable. Once releases are signed with a Developer ID, Xcode re-signs Sparkle with
+that same identity and the exception can be deleted.
+
 ### Release notes
 
 Each appcast entry links to the GitHub release page, so whatever `--generate-notes` produces (or

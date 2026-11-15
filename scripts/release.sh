@@ -94,6 +94,22 @@ xcrun stapler staple "$app"
 codesign --verify --strict --verbose=2 "$app"
 spctl --assess --type execute --verbose=2 "$app"
 
+# Neither of the checks above catches a library-validation failure: an app whose embedded
+# frameworks resolve to a different Team ID verifies clean, passes Gatekeeper and still aborts
+# the instant dyld maps them. The only thing that catches it is starting the app.
+echo "Starting the build to check it runs..."
+"$app/Contents/MacOS/Remon" >/dev/null 2>build/launch-check.log &
+launch_pid=$!
+sleep 10
+if kill -0 "$launch_pid" 2>/dev/null; then
+    kill "$launch_pid" 2>/dev/null || true
+    echo "  it starts."
+else
+    echo "error: the build exits immediately, so it would not run on anyone's Mac." >&2
+    head -5 build/launch-check.log >&2
+    exit 1
+fi
+
 # --- package and sign for Sparkle --------------------------------------------
 
 mkdir -p build/release

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Remon embeds Sparkle.framework. Under Hardened Runtime, library validation only lets a
+	     process load code signed by its own Team ID, and an ad-hoc signed build has no Team ID,
+	     so dyld refuses to map Sparkle and the app aborts at launch. Xcode applies Hardened
+	     Runtime to Release but not Debug, so this only ever broke Release builds.
+	     Once the app is signed with a real Developer ID, Xcode re-signs Sparkle with the same
+	     identity, the Team IDs match and this exception can be removed. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>
