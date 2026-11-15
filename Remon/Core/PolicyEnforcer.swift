@@ -98,6 +98,15 @@ enum FirewallScript {
 
     static func isIPv6(_ address: String) -> Bool { address.contains(":") }
 
+    /// Whether a rule's value is exactly what `normalizedDomain` / `normalizedAddress` would
+    /// produce — the only form `shell` accepts.
+    static func isNormalized(_ rule: PolicyRule) -> Bool {
+        switch rule.target {
+        case .domain(let domain): normalizedDomain(domain) == domain
+        case .address(let address): normalizedAddress(address) == address
+        }
+    }
+
     static func pfRules(addresses: [String]) -> [String] {
         addresses.flatMap { address -> [String] in
             let family = isIPv6(address) ? "inet6" : "inet"
@@ -126,6 +135,8 @@ enum FirewallScript {
     }
 
     /// Inputs must already be normalized (validated) — they are embedded in single quotes.
+    /// Every command is called by absolute path: this runs as root, so nothing in it may depend
+    /// on the environment it inherits.
     static func shell(domains: [String], addresses: [String], kill: [String],
                       hostsPath: String = "/etc/hosts", pfctl: String? = "/sbin/pfctl") -> String {
         precondition(domains.allSatisfy { normalizedDomain($0) == $0 } && (addresses + kill).allSatisfy { normalizedAddress($0) == $0 })
@@ -134,26 +145,26 @@ enum FirewallScript {
             "set -e",
             "umask 022",
             "H=\(quote(hostsPath))",
-            "[ -f \"$H.remon-backup\" ] || cp \"$H\" \"$H.remon-backup\"",
-            "T=$(mktemp /tmp/remon.XXXXXX)",
-            "sed '/^\(beginMarker)/,/^\(endMarker)/d' \"$H\" > \"$T\"",
+            "[ -f \"$H.remon-backup\" ] || /bin/cp \"$H\" \"$H.remon-backup\"",
+            "T=$(/usr/bin/mktemp /tmp/remon.XXXXXX)",
+            "/usr/bin/sed '/^\(beginMarker)/,/^\(endMarker)/d' \"$H\" > \"$T\"",
         ]
         let hosts = hostsLines(domains: domains)
         if !hosts.isEmpty {
-            lines.append("printf '%s\\n' " + hosts.map(quote).joined(separator: " ") + " >> \"$T\"")
+            lines.append("/usr/bin/printf '%s\\n' " + hosts.map(quote).joined(separator: " ") + " >> \"$T\"")
         }
         lines += [
-            "cat \"$T\" > \"$H\"",
-            "rm -f \"$T\"",
-            "dscacheutil -flushcache 2>/dev/null || true",
-            "killall -HUP mDNSResponder 2>/dev/null || true",
+            "/bin/cat \"$T\" > \"$H\"",
+            "/bin/rm -f \"$T\"",
+            "/usr/bin/dscacheutil -flushcache 2>/dev/null || true",
+            "/usr/bin/killall -HUP mDNSResponder 2>/dev/null || true",
         ]
         if let pfctl {
             let rules = pfRules(addresses: addresses)
-            lines.append("P=$(mktemp /tmp/remon.XXXXXX)")
-            lines.append(rules.isEmpty ? ": > \"$P\"" : "printf '%s\\n' " + rules.map(quote).joined(separator: " ") + " > \"$P\"")
+            lines.append("P=$(/usr/bin/mktemp /tmp/remon.XXXXXX)")
+            lines.append(rules.isEmpty ? ": > \"$P\"" : "/usr/bin/printf '%s\\n' " + rules.map(quote).joined(separator: " ") + " > \"$P\"")
             lines.append("\(pfctl) -q -a \(quote(anchor)) -f \"$P\"")
-            lines.append("rm -f \"$P\"")
+            lines.append("/bin/rm -f \"$P\"")
             if !addresses.isEmpty { lines.append("\(pfctl) -q -e 2>/dev/null || true") }
             for address in kill {
                 let any = isIPv6(address) ? "::/0" : "0.0.0.0/0"
@@ -209,7 +220,10 @@ final class PolicyCenter {
         self.enforcer = enforcer
         let defaults = UserDefaults.standard
         if let data = defaults.data(forKey: "blockRules"), let decoded = try? JSONDecoder().decode([PolicyRule].self, from: data) {
-            rules = decoded
+            // Re-validate what comes off disk: UserDefaults is writable by any process running as
+            // this user, and every value here ends up in a script that runs as root. A rule that
+            // isn't in canonical form is dropped rather than trusted.
+            rules = decoded.filter(FirewallScript.isNormalized)
         } else {
             rules = []
         }

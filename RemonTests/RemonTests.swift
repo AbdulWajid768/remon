@@ -179,6 +179,21 @@ struct FormattingTests {
         #expect(ExportService.csvEscape("plain") == "plain")
         #expect(ExportService.csvEscape("a,b") == "\"a,b\"")
         #expect(ExportService.csvEscape("say \"hi\"") == "\"say \"\"hi\"\"\"")
+        #expect(ExportService.csvEscape("line\r\nbreak") == "\"line\r\nbreak\"")
+    }
+
+    /// Hostnames, organisations and process names come from outside Remon; a spreadsheet must
+    /// never run them as formulas (CWE-1236).
+    @Test func csvNeutralisesFormulas() {
+        #expect(ExportService.csvEscape("=HYPERLINK(\"http://evil\")") == "\"'=HYPERLINK(\"\"http://evil\"\")\"")
+        #expect(ExportService.csvEscape("+cmd|' /C calc'!A0") == "'+cmd|' /C calc'!A0")
+        #expect(ExportService.csvEscape("@SUM(1)") == "'@SUM(1)")
+        #expect(ExportService.csvEscape("-host.example") == "'-host.example")
+        #expect(ExportService.csvEscape("\tx") == "'\tx")
+        // Numbers, including negatives, are data and stay as they are.
+        #expect(ExportService.csvEscape("-5") == "-5")
+        #expect(ExportService.csvEscape("1024") == "1024")
+        #expect(ExportService.csvEscape("") == "")
     }
 }
 
@@ -337,6 +352,27 @@ struct BlockingTests {
             "block drop out quick inet from any to 1.2.3.4", "block drop in quick inet from 1.2.3.4 to any",
             "block drop out quick inet6 from any to 2001:db8::1", "block drop in quick inet6 from 2001:db8::1 to any",
         ])
+    }
+
+    /// Rules come back from UserDefaults, which any process running as the user can write; only
+    /// canonical values may reach the root script.
+    @Test func storedRulesAreRevalidated() {
+        #expect(FirewallScript.isNormalized(PolicyRule(target: .domain("swscan.apple.com"))))
+        #expect(FirewallScript.isNormalized(PolicyRule(target: .address("2606:4700::1111"))))
+        #expect(!FirewallScript.isNormalized(PolicyRule(target: .domain("Swscan.Apple.com"))))
+        #expect(!FirewallScript.isNormalized(PolicyRule(target: .domain("evil.com'; rm -rf /"))))
+        #expect(!FirewallScript.isNormalized(PolicyRule(target: .address("1.2.3.4; reboot"))))
+        #expect(!FirewallScript.isNormalized(PolicyRule(target: .address("2606:4700::1111 "))))
+    }
+
+    @Test func rootScriptUsesAbsolutePaths() {
+        let script = FirewallScript.shell(domains: ["a.com"], addresses: ["1.2.3.4"], kill: [])
+        for line in script.split(separator: "\n") {
+            let command = line.split(separator: " ").first.map(String.init) ?? ""
+            let afterAssignment = command.split(separator: "(").last.map(String.init) ?? command
+            #expect(afterAssignment.hasPrefix("/") || ["set", "umask", "[", ":"].contains(command) || command.hasPrefix("H="),
+                    "not absolute: \(line)")
+        }
     }
 
     @Test func pfAcceptsGeneratedRules() throws {

@@ -92,8 +92,18 @@ enum ExportService {
         }
     }
 
+    /// Quotes a field for CSV and neutralises anything a spreadsheet would evaluate as a formula
+    /// (CWE-1236). Hostnames come from reverse DNS, organisations from ipwho.is and names from
+    /// other processes, none of which Remon controls, so a cell that starts with `=`, `+`, `-`,
+    /// `@` or a tab/CR gets a leading apostrophe — the same text-marker Excel and Numbers use.
+    /// Plain numbers (including negatives) are left alone.
     nonisolated static func csvEscape(_ value: String) -> String {
-        guard value.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" }) else { return value }
-        return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+        // Scalars, not Characters: "\r\n" is one Character, which would hide the CR.
+        var field = value
+        if let first = field.unicodeScalars.first, "=+-@\t\r".unicodeScalars.contains(first), Double(field) == nil {
+            field = "'" + field
+        }
+        guard field.unicodeScalars.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" || $0 == "\r" }) else { return field }
+        return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 }
