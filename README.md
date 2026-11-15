@@ -236,3 +236,8 @@ scripts/        release.sh, sparkle-keys.sh, appcast.py, make-icon.swift, screen
   reaches users.
 - [docs/VERIFICATION.md](docs/VERIFICATION.md) — what was verified on the development machine, and
   what was not.
+
+## License
+
+[MIT](LICENSE). Remon depends on [Sparkle](https://github.com/sparkle-project/Sparkle), which is
+distributed under its own MIT-style license.
